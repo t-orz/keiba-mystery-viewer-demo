@@ -832,6 +832,36 @@
     overlay.setAttribute("aria-hidden", on ? "false" : "true");
   }
 
+  /**
+   * 動作確認用サイト専用の告知バナー。スナップショットの demo_banner_mode
+   * （"demo"/"test"）が付いているときだけ表示する。本番のスナップショットには
+   * この項目自体が乗らないため、本サイトでは常に非表示のまま。
+   */
+  function renderDemoBanner(data) {
+    const el = $("demoBanner");
+    if (!el) return;
+    const mode = data && typeof data.demo_banner_mode === "string" ? data.demo_banner_mode.trim() : "";
+    if (mode !== "demo" && mode !== "test") {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    const label = mode === "demo" ? "デモ画面" : "テスト画面";
+    el.textContent = "";
+    const span = document.createElement("span");
+    span.textContent =
+      `これは 競馬AIミステリー予想 の${label}です。` +
+      "本サイトではJRA開催日に競馬予想を配信しております→";
+    const a = document.createElement("a");
+    a.href = "https://t-orz.github.io/keiba-mystery-viewer/";
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = "https://t-orz.github.io/keiba-mystery-viewer/";
+    el.appendChild(span);
+    el.appendChild(a);
+    el.hidden = false;
+  }
+
   function renderUpdateTiming(data) {
     const el = $("updateTiming") || document.querySelector(".update-timing");
     if (!el) return;
@@ -917,6 +947,7 @@
     const el = $("updatedAt");
     const closed = isDayClosedSnapshot(data);
     setDayClosedOverlay(closed);
+    renderDemoBanner(data);
     const stamped = formatUpdatedAtLabel(data.updated_at, data.schedule_date);
     const text = closed
       ? `本日の予想公開は終了しました\n開催日 ${data.schedule_date || "-"}`
