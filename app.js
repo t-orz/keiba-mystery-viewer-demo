@@ -919,6 +919,11 @@
       let line = `${mk}（${n}）【${a}-${b}-${c}-${d}】`;
       const avgTxt = formatMarkWeeklyAvgPop(item && item.avg_popularity_top3);
       if (avgTxt) line += `<${avgTxt}>`;
+      const placeRate = item && item.place_rate;
+      const placeReturn = item && item.place_return_rate;
+      if (n > 0 && placeRate != null && placeReturn != null) {
+        line += ` 複勝${Number(placeRate).toFixed(1)}% 複回収${Number(placeReturn).toFixed(1)}%`;
+      }
       lines.push(line);
     }
     return lines.join("\n");
