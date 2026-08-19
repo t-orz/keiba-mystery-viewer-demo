@@ -946,7 +946,7 @@
     }
     const note =
       (typeof payload.avg_popularity_note === "string" && payload.avg_popularity_note.trim()) ||
-      "※平均人気：サンプルの平均人気";
+      "※（）：サンプル数\n※<>：サンプルの平均人気";
     el.textContent = [note, ...payload.logics.map(formatMarkWeeklyLogic)].join("\n");
   }
 
