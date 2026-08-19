@@ -917,7 +917,11 @@
       const c = Number(fin[2] || 0);
       const d = Number(fin[3] || 0);
       let line = `${mk}（${n}）【${a}-${b}-${c}-${d}】`;
-      const avgTxt = formatMarkWeeklyAvgPop(item && item.avg_popularity_top3);
+      const avgRaw =
+        item && item.avg_popularity != null
+          ? item.avg_popularity
+          : item && item.avg_popularity_top3;
+      const avgTxt = formatMarkWeeklyAvgPop(avgRaw);
       if (avgTxt) line += `<${avgTxt}>`;
       const placeRate = item && item.place_rate;
       const placeReturn = item && item.place_return_rate;
@@ -942,7 +946,7 @@
     }
     const note =
       (typeof payload.avg_popularity_note === "string" && payload.avg_popularity_note.trim()) ||
-      "※平均人気：3着以内の馬の平均人気";
+      "※平均人気：サンプルの平均人気";
     el.textContent = [note, ...payload.logics.map(formatMarkWeeklyLogic)].join("\n");
   }
 
