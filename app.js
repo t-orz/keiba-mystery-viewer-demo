@@ -873,7 +873,7 @@
     const mode = cfgMode || snapMode || "15";
     const is15 = mode === "15" || mode === "early" || mode === "15m" || mode === "15min";
     const preLine = is15
-      ? "・発走15分前前後（全レース）"
+      ? "・発走10分前前後（全レース）"
       : "・発走6〜8分前（全レース）";
     // スナップショット全文は、config 未指定かつ mode 一致時のみ採用（古い6_8文面の上書きを防ぐ）
     const full = data && data.update_timing_text;

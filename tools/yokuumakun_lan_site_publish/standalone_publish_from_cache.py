@@ -1337,7 +1337,7 @@ def build_snapshot(races_cache: dict[str, Any], day: str) -> dict[str, Any]:
 
     now = datetime.now(_JST).strftime("%Y-%m-%dT%H:%M:%S")
     mode = "15"
-    pre_line = "・発走15分前前後（全レース）"
+    pre_line = "・発走10分前前後（全レース）"
     timing = (
         "【主な更新タイミング】\n"
         "・開催日早朝6時頃（全レース一斉）\n"
