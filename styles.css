@@ -276,6 +276,15 @@ body.is-day-closed .site-sidebar button:not([aria-disabled="true"]) {
 .sidebar-dev-intent-body p + p {
   margin-top: 0.35rem;
 }
+/* 障害競走など、学習・ホームズ指数の対象外レースに出す注記 */
+.race-reference-only {
+  color: #8a5a00;
+  background: rgba(255, 196, 0, 0.12);
+  border-left: 3px solid rgba(255, 196, 0, 0.65);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.2rem;
+  font-weight: 600;
+}
 .sidebar-mark-weekly-body {
   white-space: pre-line;
 }
