@@ -906,7 +906,7 @@
 
   function formatMarkWeeklyLogic(logic) {
     const label = String((logic && logic.label) || (logic && logic.id) || "").trim();
-    const lines = [label ? `・${label}` : "・"];
+    const lines = [label ? `・<strong>${escapeHtml(label)}</strong>` : "・"];
     const marks = (logic && logic.marks) || [];
     for (const item of marks) {
       const mk = String((item && item.mark) || "");
@@ -928,7 +928,7 @@
       if (n > 0 && placeRate != null && placeReturn != null) {
         line += ` 複勝${Number(placeRate).toFixed(1)}% 複回収${Number(placeReturn).toFixed(1)}%`;
       }
-      lines.push(line);
+      lines.push(escapeHtml(line));
     }
     return lines.join("\n");
   }
@@ -947,7 +947,7 @@
     const note =
       (typeof payload.avg_popularity_note === "string" && payload.avg_popularity_note.trim()) ||
       "※（）：サンプル数\n※<>：サンプルの平均人気";
-    el.textContent = [note, ...payload.logics.map(formatMarkWeeklyLogic)].join("\n");
+    el.innerHTML = [escapeHtml(note), ...payload.logics.map(formatMarkWeeklyLogic)].join("\n");
   }
 
   function applyData(data, { flash = false } = {}) {
