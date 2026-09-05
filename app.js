@@ -600,6 +600,7 @@
     if (bl === "moriarty" || /モーリアティ/.test(label)) return "assets/cast/moriarty.png";
     if (/ホプキンス/.test(label)) return "assets/cast/hopkins.png";
     if (bl === "hunter" || /ハンター/.test(label)) return "assets/cast/hunter.png";
+    if (bl === "baker" || /ベイカー/.test(label)) return "assets/cast/baker.png";
     return "";
   }
 
@@ -684,13 +685,18 @@
     const coursePart = courseLabel
       ? ` ／ <span class="race-course">${escapeHtml(courseLabel)}</span>`
       : "";
+    const fieldSizeNum = Number(r.field_size);
+    const fieldSizePart =
+      Number.isFinite(fieldSizeNum) && fieldSizeNum > 0
+        ? ` ／ 出走 <span class="race-field-size">${escapeHtml(String(fieldSizeNum))}頭</span>`
+        : "";
     const paceLabel = String(r.pace_label || "").trim();
     const paceLine = paceLabel
       ? `<p class="meta race-pace">予想ペース: <strong>${escapeHtml(paceLabel)}</strong></p>`
       : "";
     let html = `
       <h3>${escapeHtml(r.place)} ${escapeHtml(r.R)}R ${escapeHtml(r.name || "")}</h3>
-      <p class="meta">発走 ${escapeHtml(r.start_time || "-")}${coursePart} ／ 天気:${escapeHtml(r.weather || "-")} 馬場:${escapeHtml(r.baba || "-")}</p>
+      <p class="meta">発走 ${escapeHtml(r.start_time || "-")}${coursePart} ／ 天気:${escapeHtml(r.weather || "-")} 馬場:${escapeHtml(r.baba || "-")}${fieldSizePart}</p>
       ${paceLine}
       <p class="meta race-predicted-at">予想更新時間: <strong>${escapeHtml(predictedAtLabel)}</strong></p>
       <p class="meta">期待値偏差: <strong>${escapeHtml(r.dev)}</strong>（ランク ${escapeHtml(r.rank || "-")}）</p>
@@ -778,7 +784,38 @@
       html += '<p class="hint">予想前の出馬表です（印列は予想後に表示されます）。</p>';
     }
     box.innerHTML = html;
+    syncShutubaStickyOffset(box);
   }
+
+  // 枠番・馬番の左固定を有効化し、2列目の left を1列目の実測幅に合わせる。
+  // 端末やフォント倍率で桁幅が変わるため、CSS で決め打ちにすると隙間や重なりが出る。
+  // 見出しが 枠番 / 馬番 のときだけ有効化する（列が欠けた表で馬名を固定しないため）。
+  function syncShutubaStickyOffset(scope) {
+    const root = scope || document;
+    root.querySelectorAll("table.shutuba").forEach((tbl) => {
+      const ths = tbl.querySelectorAll("thead th");
+      const ok =
+        ths.length >= 2 &&
+        ths[0].textContent.trim() === "枠番" &&
+        ths[1].textContent.trim() === "馬番";
+      tbl.classList.toggle("sticky-num", ok);
+      if (!ok) {
+        tbl.style.removeProperty("--shutuba-col1-w");
+        tbl.classList.remove("is-overflowing");
+        return;
+      }
+      const w = ths[0].getBoundingClientRect().width;
+      if (w > 0) tbl.style.setProperty("--shutuba-col1-w", `${w}px`);
+      // 実際に横へはみ出しているときだけ固定列の境界を太くする。
+      // 収まっている幅で太い線を出すと表が重く見えるため。
+      const wrap = tbl.closest(".table-wrap");
+      const overflowing = !!wrap && wrap.scrollWidth > wrap.clientWidth + 1;
+      tbl.classList.toggle("is-overflowing", overflowing);
+    });
+  }
+
+  // 画面回転やリサイズで1列目の幅が変わるため測り直す
+  window.addEventListener("resize", () => syncShutubaStickyOffset());
 
   function initShutubaSortControls() {
     document.querySelectorAll("[data-shutuba-sort]").forEach((btn) => {
@@ -948,7 +985,159 @@
     const note =
       (typeof payload.avg_popularity_note === "string" && payload.avg_popularity_note.trim()) ||
       "※（）：サンプル数\n※<>：サンプルの平均人気";
-    el.innerHTML = [escapeHtml(note), ...payload.logics.map(formatMarkWeeklyLogic)].join("\n");
+    // 対象週を必ず出す。見出しは「前週の探偵印成績」固定なので、集計が止まっても
+    // 表示だけでは古いと分からない（実際に3週間気づけなかった）。
+    // JRA-VAN の結果到着が遅れると直近週ではなく1〜2週前になることがある。
+    const period =
+      payload.week_start && payload.week_end
+        ? `対象週: ${payload.week_start} 〜 ${payload.week_end}`
+        : "";
+    el.innerHTML = [period, note]
+      .filter(Boolean)
+      .map(escapeHtml)
+      .concat(payload.logics.map(formatMarkWeeklyLogic))
+      .join("\n");
+  }
+
+  const TRACK_BABA_CLASS = { "良": "ryo", "稍重": "yaya", "重": "omo", "不良": "furyo" };
+
+  // JRA 公式の天候は 6 種（晴・曇・小雨・雨・小雪・雪）。
+  // BMP の記号には異体字セレクタ FE0F を付け、字形フォントではなく絵文字で出させる。
+  const TRACK_WEATHER_ICON = {
+    "晴": String.fromCodePoint(0x2600, 0xfe0f),
+    "曇": String.fromCodePoint(0x2601, 0xfe0f),
+    "小雨": String.fromCodePoint(0x1f302),
+    "雨": String.fromCodePoint(0x2602, 0xfe0f),
+    "小雪": String.fromCodePoint(0x1f328, 0xfe0f),
+    "雪": String.fromCodePoint(0x26c4),
+  };
+
+  let trackEmojiOk = null;
+
+  /** 使う絵文字が全て字形を持つ環境か。1 つでも豆腐になるなら文字表示に戻す。 */
+  function trackEmojiSupported() {
+    if (trackEmojiOk !== null) return trackEmojiOk;
+    trackEmojiOk = false;
+    try {
+      const canvas = document.createElement("canvas");
+      if (!canvas.getContext) return trackEmojiOk;
+      canvas.width = 24;
+      canvas.height = 24;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return trackEmojiOk;
+      const draw = (ch) => {
+        ctx.clearRect(0, 0, 24, 24);
+        ctx.textBaseline = "top";
+        ctx.font = "18px sans-serif";
+        ctx.fillText(ch, 0, 0);
+        return canvas.toDataURL();
+      };
+      // U+FFFF は非文字なので必ず豆腐になる。これと同じ描画＝その字形が無い。
+      const tofu = draw(String.fromCodePoint(0xffff));
+      trackEmojiOk = Object.keys(TRACK_WEATHER_ICON)
+        .map((k) => TRACK_WEATHER_ICON[k])
+        .every((ch) => draw(ch) !== tofu);
+    } catch (e) {
+      trackEmojiOk = false;
+    }
+    return trackEmojiOk;
+  }
+
+  function trackWeatherHtml(weather) {
+    const text = String(weather || "").trim();
+    const icon = TRACK_WEATHER_ICON[text];
+    // 未知の表記と、絵文字を出せない環境では従来どおり文字で出す。
+    if (!icon || !trackEmojiSupported()) {
+      return '<span class="track-cond-weather">' + escapeHtml(text || "—") + "</span>";
+    }
+    return (
+      '<span class="track-cond-weather track-cond-weather--icon" title="' +
+      escapeHtml(text) +
+      '" aria-label="' +
+      escapeHtml(text) +
+      '">' +
+      icon +
+      "</span>"
+    );
+  }
+
+  function trackBabaClass(v) {
+    return "track-cond-baba track-cond-baba--" + (TRACK_BABA_CLASS[String(v || "").trim()] || "none");
+  }
+
+  // 直前予想は個別レースだけを更新するので、predicted_at が新しいレースほど
+  // 天候・馬場の取得時刻も新しい。predicted_at が無いものは R の大きい方で代用する。
+  function trackCondRecencyKey(r) {
+    const pa = r && r.predicted_at;
+    if (pa) {
+      const t = Date.parse(String(pa).replace(" ", "T"));
+      if (!Number.isNaN(t)) return [1, t];
+    }
+    const rn = parseInt(String((r && r.R) || "").replace(/[^0-9]/g, ""), 10);
+    return [0, Number.isNaN(rn) ? -1 : rn];
+  }
+
+  function trackLatestValue(races, valueOf) {
+    let best = "";
+    let bestKey = null;
+    for (const r of races) {
+      const v = String(valueOf(r) || "").trim();
+      if (!v || v === "-") continue;
+      const key = trackCondRecencyKey(r);
+      if (!bestKey || key[0] > bestKey[0] || (key[0] === bestKey[0] && key[1] > bestKey[1])) {
+        best = v;
+        bestKey = key;
+      }
+    }
+    return best;
+  }
+
+  function renderTrackConditions(data) {
+    const box = $("trackCond");
+    const list = $("trackCondList");
+    if (!box || !list) return;
+    const vs = (data && Array.isArray(data.venues) ? data.venues : []).filter(
+      (v) => v && Array.isArray(v.races) && v.races.length
+    );
+    if (isDayClosedSnapshot(data) || !vs.length) {
+      box.hidden = true;
+      list.innerHTML = "";
+      return;
+    }
+    const items = [];
+    for (const v of vs) {
+      const races = v.races.filter((r) => r && typeof r === "object");
+      const place = String(v.place || (races[0] && races[0].place) || "").trim();
+      if (!place) continue;
+      const weather = trackLatestValue(races, (r) => r.weather);
+      // 障害は芝・ダートのどちらの馬場を指すか一意でないので、面別集計からは外す
+      const onSurface = (name) => races.filter((r) => String(r.course || "").trim() === name);
+      const cells = [
+        ["芝", trackLatestValue(onSurface("芝"), (r) => r.baba)],
+        ["ダ", trackLatestValue(onSurface("ダート"), (r) => r.baba)],
+      ]
+        .map(
+          ([label, baba]) =>
+            '<span class="track-cond-surface"><span class="track-cond-surface-label">' +
+            escapeHtml(label) +
+            '</span><span class="' +
+            trackBabaClass(baba) +
+            '">' +
+            escapeHtml(baba || "—") +
+            "</span></span>"
+        )
+        .join("");
+      items.push(
+        '<li class="track-cond-item"><span class="track-cond-place">' +
+          escapeHtml(place) +
+          "</span>" +
+          trackWeatherHtml(weather) +
+          cells +
+          "</li>"
+      );
+    }
+    list.innerHTML = items.join("");
+    box.hidden = !items.length;
   }
 
   function applyData(data, { flash = false } = {}) {
@@ -968,6 +1157,7 @@
       window.setTimeout(() => el.classList.remove("just-updated"), 2500);
     }
     renderUpdateTiming(data);
+    renderTrackConditions(data);
     renderMarkWeeklyStats(data);
     renderTop5();
     renderTabs();

@@ -8,6 +8,14 @@
   <title>項目説明ヘルプ｜競馬AI ミステリー予想</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="styles.css" />
+  <style>
+    /* このページは通常の縦スクロール。styles.css が SPA 本体（index.html）向けに
+       ≥721px で html,body に付けている overflow:hidden / height:100% を打ち消す。 */
+    @media (min-width: 721px) {
+      html { height: auto; overflow: visible; }
+      body.help-page { height: auto; overflow: visible; overflow-x: hidden; }
+    }
+  </style>
 </head>
 <body class="help-page">
   <header class="site-header">
