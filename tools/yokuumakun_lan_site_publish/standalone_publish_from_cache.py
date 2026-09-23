@@ -1341,6 +1341,7 @@ def build_snapshot(races_cache: dict[str, Any], day: str) -> dict[str, Any]:
     timing = (
         "【主な更新タイミング】\n"
         "・開催日早朝6時頃（全レース一斉）\n"
+        "・開催日朝8時頃（天候馬場変更レース）\n"
         "・発走1時間前頃（重賞のみ）\n"
         f"{pre_line}\n"
         "※更新されない場合は通信障害など運用上のトラブルが発生しております。ご容赦ください"

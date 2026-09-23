@@ -355,9 +355,18 @@
     });
   }
 
+  /** 障害競走か。コース＝障害 / 参考予想の注記 / レース名の「障害」「ジャンプ」で見る。 */
+  function isObstacleRace(r) {
+    if (!r || typeof r !== "object") return false;
+    if (r.reference_only && /障害/.test(String(r.reference_only_reason || ""))) return true;
+    if (/^障|障害/.test(String(r.course || r.surface || "").trim())) return true;
+    return /障害|ジャンプ/.test(String(r.name || r.race_name || ""));
+  }
+
   function jumpClass(rank) {
     const r = Number(rank);
-    if (r >= 1 && r <= 5) return "jump rank-hi";
+    if (r === 1) return "jump rank-top";
+    if (r >= 2 && r <= 5) return "jump rank-hi";
     if (r >= 6 && r <= 10) return "jump rank-mid";
     return "jump";
   }
@@ -390,6 +399,7 @@
     const selected = String(r.race_id) === String(state.raceId);
     const nearest = nearestId != null && String(r.race_id) === String(nearestId);
     let cls = jumpClass(r.holmes_index_rank);
+    if (isObstacleRace(r)) cls += " is-obstacle";
     if (selected) cls += " is-selected";
     if (nearest) cls += " is-nearest-prepost";
     b.className = cls;
@@ -756,6 +766,7 @@
     }
     const cols = Array.isArray(shutuba.columns) ? shutuba.columns : [];
     const markCols = new Set(Array.isArray(shutuba.mark_columns) ? shutuba.mark_columns : []);
+    const badgeLegend = Array.isArray(shutuba.badge_legend) ? shutuba.badge_legend : [];
     let html = '<div class="table-wrap"><table class="shutuba"><thead><tr>';
     for (const c of cols) {
       html += `<th>${escapeHtml(c)}</th>`;
@@ -775,16 +786,40 @@
         if (st.cancel && (c === "馬名" || c === "単勝")) classes.push("cancel-text");
         if (markCols.has(c) && honmei[c]) classes.push(markHonmeiClass(c));
         const cls = classes.length ? ` class="${classes.join(" ")}"` : "";
-        html += `<td${cls}${styleAttr}>${escapeHtml(row[c] ?? "")}</td>`;
+        const badges = c === "馬名" ? horseBadgesHtml(row.badges) : "";
+        html += `<td${cls}${styleAttr}>${escapeHtml(row[c] ?? "")}${badges}</td>`;
       }
       html += "</tr>";
     }
     html += "</tbody></table></div>";
+    if (badgeLegend.length) {
+      const title = escapeHtml(shutuba.badge_legend_title || "【馬名略号】");
+      const items = badgeLegend
+        .map((b) => `${horseBadgesHtml([b])} ${escapeHtml(b && b.description ? b.description : "")}`)
+        .join(" / ");
+      html += `<p class="hint horse-badge-legend"><strong>${title}</strong>${items}</p>`;
+    }
     if (!shutuba.predicted) {
       html += '<p class="hint">予想前の出馬表です（印列は予想後に表示されます）。</p>';
     }
     box.innerHTML = html;
     syncShutubaStickyOffset(box);
+  }
+
+  /** 馬名欄の略号（D / B / NB）。判定も色もサーバー側 horse_name_badges が出所。
+   *  色は公開JSONが持つ値をそのまま使うので、PDF と必ず同じになる。 */
+  function horseBadgesHtml(badges) {
+    if (!Array.isArray(badges) || !badges.length) return "";
+    return badges
+      .map((b) => {
+        const label = String((b && b.label) || "").trim();
+        if (!label) return "";
+        const color = String((b && b.color) || "");
+        // 想定外の値を style に流さない
+        const style = /^#[0-9a-fA-F]{3,8}$/.test(color) ? ` style="color:${color}"` : "";
+        return `<span class="horse-badge"${style}>${escapeHtml(label)}</span>`;
+      })
+      .join("");
   }
 
   // 枠番・馬番の左固定を有効化し、2列目の left を1列目の実測幅に合わせる。
@@ -928,6 +963,7 @@
     el.textContent =
       "【主な更新タイミング】\n" +
       "・開催日早朝6時頃（全レース一斉）\n" +
+      "・開催日朝8時頃（天候馬場変更レース）\n" +
       "・発走1時間前頃（重賞のみ）\n" +
       preLine +
       "\n※更新されない場合は通信障害など運用上のトラブルが発生しております。ご容赦ください";
@@ -1159,10 +1195,12 @@
     renderUpdateTiming(data);
     renderTrackConditions(data);
     renderMarkWeeklyStats(data);
+    refreshPrevPdfBlock();
     renderTop5();
     renderTabs();
     renderMatrix();
     renderJumps();
+    syncBrandJump();
     if (state.raceId) {
       renderDetail();
       renderShutuba();
@@ -1187,6 +1225,360 @@
         $("updatedAt").innerHTML = `<span class="error">スナップショット取得失敗: ${escapeHtml(e.message || e)}</span>`;
       }
     }
+  }
+
+  /* ===== サイトバナー → 発走が最も近いレース ================================
+     サイドバーのロゴを押すと、右側の予想表示を「最終更新時刻以降で最も近い
+     未発走レース」（レースジャンプで赤枠が付くレース）へ切り替える。
+     対象が無い日（非開催・全レース発走済み・公開終了）は、ただの画像に戻す。 */
+  function brandJumpTarget() {
+    const r = nearestPrepostRace();
+    return r && r.race_id ? r : null;
+  }
+
+  function jumpToNearestPrepost() {
+    const r = brandJumpTarget();
+    if (!r) return;
+    selectRace(r.race_id, r.place);
+  }
+
+  /** 押せる状態かを毎更新で見直す（発走が進むと対象レースも動く） */
+  function syncBrandJump() {
+    const el = $("brandName");
+    if (!el) return;
+    const r = brandJumpTarget();
+    if (!r) {
+      el.classList.remove("is-jumpable");
+      el.removeAttribute("role");
+      el.removeAttribute("tabindex");
+      el.removeAttribute("title");
+      el.removeAttribute("aria-label");
+      return;
+    }
+    const rn = String(r.R || "").replace(/[Rr]$/, "");
+    const label =
+      `発走が最も近いレースの予想へ（${r.place || ""} ${rn}R ${normalizeStartTime(r.start_time)}）`.replace(
+        /\s+/g,
+        " "
+      );
+    el.classList.add("is-jumpable");
+    el.setAttribute("role", "button");
+    el.setAttribute("tabindex", "0");
+    el.title = label;
+    el.setAttribute("aria-label", label);
+  }
+
+  function initBrandJump() {
+    const el = $("brandName");
+    if (!el) return;
+    el.addEventListener("click", () => jumpToNearestPrepost());
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      e.preventDefault();
+      jumpToNearestPrepost();
+    });
+  }
+
+  /* ===== 【前日予想データPDF】 ==============================================
+     連続した開催日の2日目以降に、同じ連続開催の前日（3日目なら前々日まで）の
+     印付き出馬表 PDF を開けるようにする。
+
+     - 日付付きスナップショット snapshots/<YYYY-MM-DD>.json は公開のたびに更新され、
+       開催日終了処理でも消さずに残る。ここから place / R / start_time / pdf_url を借りる。
+     - 本体は 240KB 前後あるので、存在確認は HEAD で行い、中身はアコーディオンを
+       開いたときに初めて取りに行く。
+     - 前日のスナップショットが無い日（＝連続開催の初日）で遡りを打ち切るので、
+       開催週をまたいで前週の開催を拾うことはない。
+     - PDF 自体は Supabase 側で 8 日経つと消えるため、古い日はリンク切れになりうる。 */
+  const PREV_PDF_MAX_DAYS = 3;
+  const PREV_PDF_DAY_LABELS = ["前日", "前々日", "3日前"];
+  const prevPdfState = { days: [], probedFor: "", loadedFor: "", loading: false };
+
+  /** cfg.SNAPSHOT_URL（= .../snapshots/latest.json）と同じ場所の日付付き URL */
+  function datedSnapshotUrl(day) {
+    const base = String(cfg.SNAPSHOT_URL || "").split("?")[0];
+    if (!base || !/latest\.json$/.test(base)) return "";
+    return base.replace(/latest\.json$/, `${day}.json`);
+  }
+
+  function withCacheBust(url) {
+    return url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+  }
+
+  /** "YYYY-MM-DD" を delta 日ずらす（閲覧端末のタイムゾーンに依存させない） */
+  function shiftDay(day, delta) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || "").trim());
+    if (!m) return "";
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    d.setUTCDate(d.getUTCDate() + Number(delta));
+    return d.toISOString().slice(0, 10);
+  }
+
+  /** 日本時間の今日。端末の時計が海外でも開催日とずれないようにする。 */
+  function todayInJst() {
+    try {
+      return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Tokyo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+    } catch (_) {
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+  }
+
+  function prevPdfBaseDay() {
+    const day = String((state.data && state.data.schedule_date) || "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : todayInJst();
+  }
+
+  function formatPrevPdfDayLabel(day, idx) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
+    const name = PREV_PDF_DAY_LABELS[idx] || `${idx + 1}日前`;
+    if (!m) return `${day} ${name}`;
+    const wd = "日月火水木金土".charAt(
+      new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay()
+    );
+    return `${Number(m[2])}/${Number(m[3])}（${wd}）の予想 ［${name}］`;
+  }
+
+  /** 遡れる前日の一覧。途切れた時点で打ち切る＝連続開催のぶんだけ返る。 */
+  async function probePrevPdfDays(baseDay) {
+    const days = [];
+    let day = baseDay;
+    for (let i = 0; i < PREV_PDF_MAX_DAYS; i += 1) {
+      day = shiftDay(day, -1);
+      const url = day ? datedSnapshotUrl(day) : "";
+      if (!url) break;
+      let ok = false;
+      try {
+        const resp = await fetch(withCacheBust(url), { method: "HEAD", cache: "no-store" });
+        ok = resp.ok;
+      } catch (_) {
+        ok = false;
+      }
+      if (!ok) break;
+      days.push(day);
+    }
+    return days;
+  }
+
+  /** 発走表順の表の1セル。PDF があればリンク、無ければ押せない見た目にする。 */
+  function makePrevPdfLink(r) {
+    const rn = String(r.R || "").replace(/[Rr]$/, "") || "-";
+    let cls = jumpClass(r.holmes_index_rank);
+    if (isObstacleRace(r)) cls += " is-obstacle";
+    const head = `${r.place || ""} ${rn}R ${normalizeStartTime(r.start_time)}`.trim();
+    const name = String(r.name || "").trim();
+    const tip = name ? `${head} ${name}` : head;
+    const pdf = String(r.pdf_url || "").trim();
+    if (!pdf) {
+      const span = document.createElement("span");
+      span.className = `${cls} prev-pdf-link is-nopdf`;
+      span.textContent = `${rn}R`;
+      span.title = `${tip}（PDFはありません）`;
+      return span;
+    }
+    const a = document.createElement("a");
+    a.className = `${cls} prev-pdf-link`;
+    a.href = pdf;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = `${rn}R`;
+    a.title = `${tip} の予想詳細PDF`;
+    return a;
+  }
+
+  /** レースジャンプ「発走表」と同じ会場列 × 発走時刻行の表を、その日の JSON から作る */
+  function buildPrevPdfTable(snap) {
+    const venueList = (snap && Array.isArray(snap.venues) && snap.venues) || [];
+    const placeList = venueList.map((v) => v.place).filter(Boolean);
+    const races = [];
+    for (const v of venueList) {
+      for (const r of v.races || []) races.push(r.place ? r : { ...r, place: v.place });
+    }
+    if (!placeList.length || !races.length) {
+      const p = document.createElement("p");
+      p.className = "sidebar-prev-pdf-hint";
+      p.textContent = "この日の発走表データがありません";
+      return p;
+    }
+
+    const times = [];
+    const seen = new Set();
+    for (const r of races) {
+      const t = normalizeStartTime(r.start_time);
+      if (!t || seen.has(t)) continue;
+      seen.add(t);
+      times.push(t);
+    }
+    times.sort();
+    if (!times.length) {
+      const p = document.createElement("p");
+      p.className = "sidebar-prev-pdf-hint";
+      p.textContent = "この日の発走時刻がありません";
+      return p;
+    }
+
+    const byKey = new Map();
+    for (const r of races) {
+      const t = normalizeStartTime(r.start_time);
+      const place = r.place;
+      if (!t || !place) continue;
+      const key = `${t}||${place}`;
+      // 同一時刻・同一場は R 昇順の先頭を採用（レースジャンプと同じ扱い）
+      const prev = byKey.get(key);
+      if (!prev) {
+        byKey.set(key, r);
+        continue;
+      }
+      const rn = Number.parseInt(String(r.R || "").replace(/[Rr]$/, ""), 10);
+      const pn = Number.parseInt(String(prev.R || "").replace(/[Rr]$/, ""), 10);
+      if (Number.isFinite(rn) && (!Number.isFinite(pn) || rn < pn)) byKey.set(key, r);
+    }
+
+    const box = document.createElement("div");
+    box.className = "jump-timeline sidebar-jump-timeline";
+    const scroll = document.createElement("div");
+    scroll.className = "jump-timeline-scroll";
+    const table = document.createElement("table");
+    table.className = "jump-scoreboard";
+    table.setAttribute("aria-label", "前日予想データPDF（発走表順）");
+
+    const thead = document.createElement("thead");
+    const hr = document.createElement("tr");
+    const corner = document.createElement("th");
+    corner.className = "jump-scoreboard-corner";
+    corner.textContent = "発走";
+    hr.appendChild(corner);
+    for (const place of placeList) {
+      const th = document.createElement("th");
+      th.className = "jump-scoreboard-place";
+      th.textContent = place;
+      hr.appendChild(th);
+    }
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    for (const t of times) {
+      const tr = document.createElement("tr");
+      const th = document.createElement("th");
+      th.className = "jump-scoreboard-time";
+      th.scope = "row";
+      th.textContent = t;
+      tr.appendChild(th);
+      for (const place of placeList) {
+        const td = document.createElement("td");
+        const r = byKey.get(`${t}||${place}`);
+        if (!r) {
+          td.className = "jump-scoreboard-cell is-empty";
+          const dot = document.createElement("span");
+          dot.className = "jump-scoreboard-dot";
+          dot.setAttribute("aria-hidden", "true");
+          td.appendChild(dot);
+        } else {
+          td.className = "jump-scoreboard-cell";
+          const inner = document.createElement("div");
+          inner.className = "jump-scoreboard-cell-inner";
+          inner.appendChild(makePrevPdfLink(r));
+          td.appendChild(inner);
+        }
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    scroll.appendChild(table);
+    box.appendChild(scroll);
+    return box;
+  }
+
+  function buildPrevPdfDaySection(day, idx, snap) {
+    const sec = document.createElement("section");
+    sec.className = "prev-pdf-day";
+    const h = document.createElement("h3");
+    h.className = "prev-pdf-day-title";
+    h.textContent = formatPrevPdfDayLabel(day, idx);
+    sec.appendChild(h);
+    sec.appendChild(buildPrevPdfTable(snap));
+    return sec;
+  }
+
+  /** アコーディオンを開いたときだけ本体（日別スナップショット）を取りに行く */
+  async function renderPrevPdf() {
+    const body = $("prevPdfBody");
+    if (!body) return;
+    const days = prevPdfState.days;
+    const wantKey = days.join(",");
+    if (prevPdfState.loading) return;
+    if (prevPdfState.loadedFor && prevPdfState.loadedFor === wantKey) return;
+    if (!days.length) {
+      body.innerHTML = "<p class='sidebar-prev-pdf-hint'>前日の予想データはありません</p>";
+      prevPdfState.loadedFor = wantKey;
+      return;
+    }
+    prevPdfState.loading = true;
+    body.innerHTML = "<p class='sidebar-prev-pdf-hint'>前日の予想データを読み込み中…</p>";
+    try {
+      const loaded = [];
+      for (const day of days) {
+        const url = datedSnapshotUrl(day);
+        if (!url) continue;
+        const resp = await fetch(withCacheBust(url), { cache: "no-store" });
+        if (!resp.ok) continue;
+        loaded.push({ day, snap: await resp.json() });
+      }
+      body.innerHTML = "";
+      if (!loaded.length) {
+        body.innerHTML = "<p class='sidebar-prev-pdf-hint'>前日の予想データはありません</p>";
+      } else {
+        const lead = document.createElement("p");
+        lead.className = "sidebar-prev-pdf-hint";
+        lead.textContent = "※レースを押すと、その日の印付き出馬表PDFが開きます";
+        body.appendChild(lead);
+        loaded.forEach((item, i) => {
+          body.appendChild(buildPrevPdfDaySection(item.day, i, item.snap));
+        });
+      }
+      prevPdfState.loadedFor = wantKey;
+    } catch (e) {
+      body.innerHTML =
+        "<p class='sidebar-prev-pdf-hint'>前日の予想データを取得できませんでした: " +
+        escapeHtml(e.message || e) +
+        "</p>";
+    } finally {
+      prevPdfState.loading = false;
+    }
+  }
+
+  /** 連続開催の2日目以降だけブロックを出す（前日が無ければ隠したまま） */
+  async function refreshPrevPdfBlock() {
+    const block = $("prevPdfBlock");
+    if (!block) return;
+    const baseDay = prevPdfBaseDay();
+    if (!baseDay || prevPdfState.probedFor === baseDay) return;
+    prevPdfState.probedFor = baseDay;
+    const days = await probePrevPdfDays(baseDay);
+    prevPdfState.days = days;
+    prevPdfState.loadedFor = "";
+    block.hidden = !days.length;
+    if (!days.length) {
+      block.open = false;
+      return;
+    }
+    if (block.open) renderPrevPdf();
+  }
+
+  function initPrevPdfBlock() {
+    const block = $("prevPdfBlock");
+    if (!block) return;
+    block.addEventListener("toggle", () => {
+      if (block.open) renderPrevPdf();
+    });
   }
 
   const ACC_STORAGE_KEY = "pv_acc_state_v1";
@@ -1302,6 +1694,8 @@
   initAccordion();
   initShutubaSortControls();
   initJumpLayoutControls();
+  initPrevPdfBlock();
+  initBrandJump();
   loadSnapshot();
   const poll = Number(cfg.POLL_INTERVAL_MS) || 30000;
   if (poll > 0) {

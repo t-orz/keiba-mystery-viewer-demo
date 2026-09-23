@@ -23,7 +23,7 @@
       <p class="updated" id="updatedAt">更新を読み込み中…</p>
       <p class="update-note">※数値、予想印は更新ごとに変動する場合があります。レース直前予想通知機能もご活用されるなど、最新の更新情報を参照してください</p>
       <section class="track-cond" id="trackCond" aria-labelledby="trackCondTitle" hidden>
-        <h2 class="track-cond-title" id="trackCondTitle">最新の馬場・天候</h2>
+        <h2 class="track-cond-title" id="trackCondTitle">【最新の天候・馬場状況】</h2>
         <ul class="track-cond-list" id="trackCondList"></ul>
       </section>
       <p class="nav-links">
@@ -36,7 +36,7 @@
           <button type="button" class="jump-layout-btn" data-jump-layout="timeline" aria-pressed="false">発走表</button>
         </div>
         <div id="venueTabsSidebar" class="tabs sidebar-venue-tabs" role="tablist" aria-label="会場"></div>
-        <p class="hint jump-legend sidebar-jump-legend">青=ホームズ指数1〜5位 / 緑=6〜10位 / 赤枠=最終更新に最も近い発走前</p>
+        <p class="hint jump-legend sidebar-jump-legend">金=ホームズ指数1位 / 青=2〜5位 / 緑=6〜10位 / 灰=障害 / 赤枠=最終更新に最も近い発走前</p>
         <div id="jumpButtonsSidebar" class="jump-row sidebar-jump-row"></div>
       </section>
       <section class="sidebar-subscribe" aria-labelledby="subscribeTitle">
@@ -50,6 +50,7 @@
         </div>
         <p class="update-timing" id="updateTiming" aria-label="主な更新タイミング">【主な更新タイミング】
 ・開催日早朝6時頃（全レース一斉）
+・開催日朝8時頃（天候馬場変更レース）
 ・発走1時間前頃（重賞のみ）
 ・発走10分前前後（全レース）
 ※更新されない場合は通信障害など運用上のトラブルが発生しております。ご容赦ください</p>
@@ -66,6 +67,12 @@
           <summary>【前週の探偵印成績】</summary>
           <div class="sidebar-mark-weekly-body" id="markWeeklyStats">データがありません</div>
         </details>
+        <details class="sidebar-prev-pdf" id="prevPdfBlock" hidden>
+          <summary>【前日予想データPDF】</summary>
+          <div class="sidebar-prev-pdf-body" id="prevPdfBody">
+            <p class="sidebar-prev-pdf-hint">読み込み中…</p>
+          </div>
+        </details>
         <details class="sidebar-dev-notes">
           <summary>【開発ノート】</summary>
           <div class="sidebar-dev-notes-body">
@@ -75,6 +82,7 @@
               <li>よくわからなかったらとりあえずアイリーンの◎ー〇▲（☆）を狙ってください。ワイドでいいです。買う基準は1通りが最低15倍くらいです。合成で5～10倍ぐらいが目安です。倍率が物足りなかったら馬連にするか見送ってください。もちろん自己責任で</li>
               <li>最近の川田はすごい来なくなったわけじゃないけど、配当の割には来てない感はやはりあると思います</li>
               <li>現状のホームズ指数や期待値偏差でレースの取捨を計るのはどうやら難しい模様。修正や新しい方法を模索しつつ、とりあえずここら辺はいったん無視して印のみを判断材料に買うレースは自身で判断する形を推奨します。</li>
+              <li>土曜より日曜の方が自信ありニキ</li>
             </ul>
             <p class="sidebar-dev-notes-def">不人気→2桁人気もしくはそれに近い馬</p>
           </div>
@@ -92,9 +100,10 @@
         role="status"
       >
         <p class="day-closed-message">
-          本日の予想公開は終了しました<br />
-          次回開催日もよろしくお願いします
+          <span class="dcm-chunk">本日の予想公開は</span><span class="dcm-chunk">終了しました</span><br />
+          <span class="dcm-chunk">次回開催日も</span><span class="dcm-chunk">よろしくお願いします</span>
         </p>
+        <p class="day-closed-hours">当日予想公開時間：<br class="day-closed-hours-br" />中央競馬開催日の6:00頃～23:55</p>
       </div>
       <div class="acc-toolbar mobile-only" id="accToolbar" hidden>
         <button type="button" class="acc-tool-btn" id="accOpenAll">すべて開く</button>
@@ -111,7 +120,7 @@
           <div class="overview-body">
             <p>
               本サイトは「競馬AI ミステリー予想」の<strong>閲覧専用</strong>ページです。
-              LINE／Discord でお届けする当日予想のサマリーを、ブラウザ上でまとめて確認できます。
+              Discord等でお届けする当日予想のサマリーを、ブラウザ上でまとめて確認できます。
               予想の作成・編集や馬券購入は行いません。
             </p>
             <p>
@@ -194,7 +203,7 @@
                 <button type="button" class="jump-layout-btn active" data-jump-layout="venue" aria-pressed="true">場内</button>
                 <button type="button" class="jump-layout-btn" data-jump-layout="timeline" aria-pressed="false">発走表</button>
               </div>
-              <p class="hint jump-legend">ジャンプ色: 青=ホームズ指数1〜5位 / 緑=6〜10位 / 赤枠=最終更新に最も近い発走前</p>
+              <p class="hint jump-legend">ジャンプ色: 金=ホームズ指数1位 / 青=2〜5位 / 緑=6〜10位 / 灰=障害 / 赤枠=最終更新に最も近い発走前</p>
               <div id="jumpButtons" class="jump-row"></div>
             </div>
           </div>
