@@ -6,7 +6,7 @@
   function loadShutubaSort() {
     try {
       const v = localStorage.getItem(SHUTUBA_SORT_KEY);
-      if (v === "umaban" || v === "default") return v;
+      if (v === "umaban" || v === "default" || v === "ninki") return v;
     } catch (_) {
       /* ignore */
     }
@@ -34,23 +34,25 @@
   const $ = (id) => document.getElementById(id);
 
   function syncShutubaSortControls() {
-    const sortDefault = state.shutubaSort !== "umaban";
+    const mode = state.shutubaSort;
     document.querySelectorAll("[data-shutuba-sort]").forEach((btn) => {
-      const mode = btn.getAttribute("data-shutuba-sort");
-      const active = sortDefault ? mode === "default" : mode === "umaban";
+      const active = btn.getAttribute("data-shutuba-sort") === mode;
       btn.classList.toggle("active", active);
       btn.setAttribute("aria-pressed", active ? "true" : "false");
     });
     const hint = $("shutubaSortHint");
     if (hint) {
-      hint.textContent = sortDefault
-        ? "推定3着内率の高い順"
-        : "馬番の小さい順";
+      hint.textContent =
+        mode === "umaban"
+          ? "馬番の小さい順"
+          : mode === "ninki"
+          ? "人気の高い順（単勝オッズが低い順）"
+          : "推定3着内率の高い順（本体UIと同じ）";
     }
   }
 
   function setShutubaSort(mode) {
-    state.shutubaSort = mode === "umaban" ? "umaban" : "default";
+    state.shutubaSort = mode === "umaban" || mode === "ninki" ? mode : "default";
     try {
       localStorage.setItem(SHUTUBA_SORT_KEY, state.shutubaSort);
     } catch (_) {
@@ -70,15 +72,21 @@
         else brand.textContent = cfg.BRAND_NAME;
       }
     }
-    if (!disc) return;
-    if (cfg.DISCORD_INVITE_URL && !String(cfg.DISCORD_INVITE_URL).includes("YOUR_")) {
-      disc.href = cfg.DISCORD_INVITE_URL;
-      disc.removeAttribute("aria-disabled");
-      disc.removeAttribute("title");
+    setDiscordCta(disc, cfg.DISCORD_INVITE_URL, "DISCORD_INVITE_URL");
+    // 超直前予想（Discord通知限定）の参加ボタン（2026-10-13）
+    setDiscordCta($("discordCta5m"), cfg.DISCORD_5M_INVITE_URL, "DISCORD_5M_INVITE_URL");
+  }
+
+  function setDiscordCta(el, url, key) {
+    if (!el) return;
+    if (url && /^https:\/\//.test(String(url)) && !String(url).includes("YOUR_")) {
+      el.href = url;
+      el.removeAttribute("aria-disabled");
+      el.removeAttribute("title");
     } else {
-      disc.href = "#";
-      disc.setAttribute("aria-disabled", "true");
-      disc.title = "config.js の DISCORD_INVITE_URL を設定してください";
+      el.href = "#";
+      el.setAttribute("aria-disabled", "true");
+      el.title = `config.js の ${key} を設定してください`;
     }
   }
 
@@ -685,6 +693,7 @@
     const found = findRace(state.raceId);
     if (!found) {
       box.innerHTML = "<p class='hint'>マトリクスの行またはジャンプボタンでレースを選ぶと表示されます。</p>";
+      renderResult();
       return;
     }
     const r = found.race;
@@ -710,7 +719,7 @@
       ${paceLine}
       <p class="meta race-predicted-at">予想更新時間: <strong>${escapeHtml(predictedAtLabel)}</strong></p>
       <p class="meta">期待値偏差: <strong>${escapeHtml(r.dev)}</strong>（ランク ${escapeHtml(r.rank || "-")}）</p>
-      <p class="meta">ホームズ指数: <strong>${escapeHtml(formatHolmesIndexDisplay(r))}</strong> ／ 当日レース内順位: <strong>${escapeHtml(r.holmes_rank_text || "算出前")}</strong></p>
+      <p class="meta">ホームズ指数: <strong>${escapeHtml(formatHolmesIndexDisplay(r))}</strong>${r.holmes_morning_delta_text ? `<span class="holmes-delta">${escapeHtml(r.holmes_morning_delta_text)}</span>` : ""} ／ 当日レース内順位: <strong>${escapeHtml(r.holmes_rank_text || "算出前")}</strong></p>
       ${r.reference_only ? `<p class="meta race-reference-only">${escapeHtml(r.reference_only_reason || "学習・ホームズ指数の対象外（参考予想）")}</p>` : ""}
       <p class="meta">${formatHolmesRecommendHtml(r)}</p>
       <div class="marks">
@@ -726,7 +735,28 @@
     if (r.help_pdf_url) html += `<a href="${escapeAttr(r.help_pdf_url)}" target="_blank" rel="noopener">項目説明PDF</a>`;
     if (!r.pdf_url && !r.help_pdf_url) html += "<span class='hint'>PDFはまだ公開されていません</span>";
     html += "</div>";
+    html += raceResultBriefHtml(r);
     box.innerHTML = html;
+    renderResult();
+  }
+
+  // 脚質は競馬新聞と同じ漢字1文字で出す（2026-09-27）。色は付けない。
+  // データ（推定脚質）は元の語のまま。表示のときだけ置き換え、元の語は title に残す。
+  const RUNNING_STYLE_SHORT = {
+    "逃げ": ["逃", "rs-nige"],
+    "先行": ["先", "rs-senko"],
+    "差し": ["差", "rs-sashi"],
+    "追込": ["追", "rs-oikomi"],
+    "追い込み": ["追", "rs-oikomi"],
+    "マクリ": ["捲", "rs-makuri"],
+  };
+
+  function runningStyleCellHtml(v) {
+    const raw = String(v ?? "").trim();
+    const hit = RUNNING_STYLE_SHORT[raw];
+    const [txt, cls] = hit || ["－", "rs-none"];
+    const title = raw ? `推定脚質: ${raw}` : "推定脚質: 不明";
+    return `<span class="rs ${cls}" title="${escapeAttr(title)}">${escapeHtml(txt)}</span>`;
   }
 
   function markHonmeiClass(col) {
@@ -739,14 +769,26 @@
 
   function shutubaRowsForDisplay(rows) {
     const list = Array.isArray(rows) ? rows.slice() : [];
-    if (state.shutubaSort !== "umaban") return list;
-    return list.sort((a, b) => {
-      const na = Number.parseInt(String(a && a["馬番"] != null ? a["馬番"] : ""), 10);
-      const nb = Number.parseInt(String(b && b["馬番"] != null ? b["馬番"] : ""), 10);
-      const va = Number.isFinite(na) ? na : 999;
-      const vb = Number.isFinite(nb) ? nb : 999;
-      return va - vb;
-    });
+    if (state.shutubaSort === "umaban") {
+      return list.sort((a, b) => {
+        const na = Number.parseInt(String(a && a["馬番"] != null ? a["馬番"] : ""), 10);
+        const nb = Number.parseInt(String(b && b["馬番"] != null ? b["馬番"] : ""), 10);
+        const va = Number.isFinite(na) ? na : 999;
+        const vb = Number.isFinite(nb) ? nb : 999;
+        return va - vb;
+      });
+    }
+    if (state.shutubaSort === "ninki") {
+      return list.sort((a, b) => {
+        const na = Number.parseInt(String(a && a["人気"] != null ? a["人気"] : ""), 10);
+        const nb = Number.parseInt(String(b && b["人気"] != null ? b["人気"] : ""), 10);
+        // 取消等で人気が無い馬は末尾へ（馬番ソートと同じ考え方）
+        const va = Number.isFinite(na) ? na : 999;
+        const vb = Number.isFinite(nb) ? nb : 999;
+        return va - vb;
+      });
+    }
+    return list;
   }
 
   function renderShutuba() {
@@ -785,9 +827,11 @@
         }
         if (st.cancel && (c === "馬名" || c === "単勝")) classes.push("cancel-text");
         if (markCols.has(c) && honmei[c]) classes.push(markHonmeiClass(c));
+        if (c === "脚質") classes.push("rs-cell");
         const cls = classes.length ? ` class="${classes.join(" ")}"` : "";
         const badges = c === "馬名" ? horseBadgesHtml(row.badges) : "";
-        html += `<td${cls}${styleAttr}>${escapeHtml(row[c] ?? "")}${badges}</td>`;
+        const body = c === "脚質" ? runningStyleCellHtml(row[c]) : escapeHtml(row[c] ?? "");
+        html += `<td${cls}${styleAttr}>${body}${badges}</td>`;
       }
       html += "</tr>";
     }
@@ -969,44 +1013,9 @@
       "\n※更新されない場合は通信障害など運用上のトラブルが発生しております。ご容赦ください";
   }
 
-  function formatMarkWeeklyAvgPop(avg) {
-    if (avg == null || avg === "") return "";
-    const n = Number(avg);
-    if (!Number.isFinite(n)) return "";
-    const r = Math.round(n * 10) / 10;
-    if (Math.abs(r - Math.round(r)) < 1e-9) return String(Math.round(r));
-    return r.toFixed(1);
-  }
-
-  function formatMarkWeeklyLogic(logic) {
-    const label = String((logic && logic.label) || (logic && logic.id) || "").trim();
-    const lines = [label ? `・<strong>${escapeHtml(label)}</strong>` : "・"];
-    const marks = (logic && logic.marks) || [];
-    for (const item of marks) {
-      const mk = String((item && item.mark) || "");
-      const n = Number((item && item.n) || 0);
-      const fin = Array.isArray(item && item.finishes) ? item.finishes : [0, 0, 0, 0];
-      const a = Number(fin[0] || 0);
-      const b = Number(fin[1] || 0);
-      const c = Number(fin[2] || 0);
-      const d = Number(fin[3] || 0);
-      let line = `${mk}（${n}）【${a}-${b}-${c}-${d}】`;
-      const avgRaw =
-        item && item.avg_popularity != null
-          ? item.avg_popularity
-          : item && item.avg_popularity_top3;
-      const avgTxt = formatMarkWeeklyAvgPop(avgRaw);
-      if (avgTxt) line += `<${avgTxt}>`;
-      const placeRate = item && item.place_rate;
-      const placeReturn = item && item.place_return_rate;
-      if (n > 0 && placeRate != null && placeReturn != null) {
-        line += ` 複勝${Number(placeRate).toFixed(1)}% 複回収${Number(placeReturn).toFixed(1)}%`;
-      }
-      lines.push(escapeHtml(line));
-    }
-    return lines.join("\n");
-  }
-
+  // 【探偵印成績（前週・今開催）】は対象週・今開催と表形式PDFへのボタンだけを出す（2026-09-26）。
+  // 印ごとの成績・注記（サンプル数／平均人気など）は PDF に集約した。ブロック内に戻さないこと。
+  // 2026-10-13: PDF の2ページ目以降に開催ごとの累計（今開催の探偵印成績）を足し、見出しも改めた。
   function renderMarkWeeklyStats(data) {
     const el = $("markWeeklyStats") || document.querySelector(".sidebar-mark-weekly-body");
     if (!el) return;
@@ -1014,25 +1023,30 @@
     const emptyMsg =
       (payload && typeof payload.empty_message === "string" && payload.empty_message.trim()) ||
       "データがありません";
-    if (!payload || !payload.has_data || !Array.isArray(payload.logics) || !payload.logics.length) {
+    if (!payload || !payload.has_data) {
       el.textContent = emptyMsg;
       return;
     }
-    const note =
-      (typeof payload.avg_popularity_note === "string" && payload.avg_popularity_note.trim()) ||
-      "※（）：サンプル数\n※<>：サンプルの平均人気";
-    // 対象週を必ず出す。見出しは「前週の探偵印成績」固定なので、集計が止まっても
+    // 対象週は必ず出す。見出しは「探偵印成績（前週・今開催）」固定なので、集計が止まっても
     // 表示だけでは古いと分からない（実際に3週間気づけなかった）。
-    // JRA-VAN の結果到着が遅れると直近週ではなく1〜2週前になることがある。
     const period =
       payload.week_start && payload.week_end
         ? `対象週: ${payload.week_start} 〜 ${payload.week_end}`
         : "";
-    el.innerHTML = [period, note]
-      .filter(Boolean)
-      .map(escapeHtml)
-      .concat(payload.logics.map(formatMarkWeeklyLogic))
-      .join("\n");
+    // 今開催: PDF の2ページ目以降に載っている開催（開催初日から対象週の末日までの累計）
+    const meetings = (Array.isArray(payload.meetings) ? payload.meetings : [])
+      .filter((m) => m && m.title)
+      .map((m) => `${m.title} ${m.nichime || ""}`.trim());
+    const meetingLine = meetings.length ? `今開催: ${meetings.join("／")}` : "";
+    const pdfUrl = String(payload.pdf_url || "").trim();
+    if (!/^https:\/\//.test(pdfUrl)) {
+      el.textContent = [period, meetingLine, "PDFを準備中です"].filter(Boolean).join("\n");
+      return;
+    }
+    el.innerHTML =
+      (period ? `<span class="mark-weekly-period">${escapeHtml(period)}</span>` : "") +
+      (meetingLine ? `<span class="mark-weekly-period">${escapeHtml(meetingLine)}</span>` : "") +
+      `<a class="btn mark-weekly-pdf-btn" href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer">成績をPDFで見る</a>`;
   }
 
   const TRACK_BABA_CLASS = { "良": "ryo", "稍重": "yaya", "重": "omo", "不良": "furyo" };
@@ -1220,6 +1234,7 @@
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       applyData(data, { flash: silent });
+      loadResults();
     } catch (e) {
       if (!silent) {
         $("updatedAt").innerHTML = `<span class="error">スナップショット取得失敗: ${escapeHtml(e.message || e)}</span>`;
@@ -1303,6 +1318,150 @@
 
   function withCacheBust(url) {
     return url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+  }
+
+  /* ===== 確定結果（1〜5着） ==================================================
+     発走後に結果が確定したレースの 1〜5着を、サーバーが results/<開催日>.json に
+     予想とは別のファイルで置く（主に JRA 公式、取れなかった分だけ netkeiba）。
+     ここではそれを読んでレース要約の下に添えるだけで、予想の印や指数は書き換えない。
+     結果は数分おきにしか増えないので、予想のポーリングより間隔を空けて取りに行く。
+     snapshots/ 配下はサイトクローズで消されるため、置き場所は results/ にしてある。 */
+  const RESULTS_MIN_INTERVAL_MS = 120000;
+  const resultsState = { day: "", races: {}, fetchedAt: 0, loading: false };
+
+  /** cfg.SNAPSHOT_URL（= .../snapshots/latest.json）と同じバケットの results/<day>.json */
+  function resultsUrl(day) {
+    const base = String(cfg.SNAPSHOT_URL || "").split("?")[0];
+    if (!base || !/snapshots\/latest\.json$/.test(base)) return "";
+    return base.replace(/snapshots\/latest\.json$/, `results/${day}.json`);
+  }
+
+  async function loadResults({ force = false } = {}) {
+    const day = String((state.data && state.data.schedule_date) || "").trim();
+    if (!day || resultsState.loading || isDayClosedSnapshot(state.data)) return;
+    const now = Date.now();
+    if (!force && resultsState.day === day && now - resultsState.fetchedAt < RESULTS_MIN_INTERVAL_MS) return;
+    const url = resultsUrl(day);
+    if (!url) return;
+    if (resultsState.day !== day) {
+      resultsState.day = day;
+      resultsState.races = {};
+    }
+    resultsState.loading = true;
+    try {
+      const resp = await fetch(withCacheBust(url), { cache: "no-store" });
+      // 最初のレースが確定するまではファイルが無い（4xx）。そのときは何も出さない
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.schedule_date === day && data.races && typeof data.races === "object") {
+          const changed = JSON.stringify(data.races) !== JSON.stringify(resultsState.races);
+          resultsState.races = data.races;
+          if (changed && state.raceId) renderDetail();
+        }
+      }
+      resultsState.fetchedAt = now;
+    } catch (_) {
+      /* 次の周期でやり直す */
+    } finally {
+      resultsState.loading = false;
+    }
+  }
+
+  /** 選択中レースの確定結果。まだ無ければ null */
+  function raceResultFor(r) {
+    const day = String((state.data && state.data.schedule_date) || "");
+    if (!r || resultsState.day !== day) return null;
+    const res = resultsState.races[r.race_id];
+    return res && Array.isArray(res.top) && res.top.length ? res : null;
+  }
+
+  /** 馬番を丸囲み数字にする（①〜⑳。JRA は最大18頭）。範囲外はそのままの数字 */
+  function circledNumber(n) {
+    const v = Number.parseInt(String(n), 10);
+    return Number.isFinite(v) && v >= 1 && v <= 20 ? String.fromCharCode(0x2460 + v - 1) : String(n);
+  }
+
+  /** レース要約に添える1行（着順と馬番だけ。馬番は丸囲み数字）。詳しくは「確定結果」ブロックへ */
+  function raceResultBriefHtml(r) {
+    const res = raceResultFor(r);
+    if (!res) return "";
+    const parts = res.top.map(
+      (t) => `<span class="rb-item">${escapeHtml(String(t.rank))}着 <strong>${escapeHtml(circledNumber(t.umaban))}</strong></span>`
+    );
+    return `<p class="meta race-result-brief">確定着順: ${parts.join(" ")}</p>`;
+  }
+
+  /** 「確定結果」ブロック（既定は閉じている）。着差・人気・探偵の印・払戻金まで出す */
+  function renderResult() {
+    const box = $("raceResult");
+    if (!box) return;
+    const found = findRace(state.raceId);
+    if (!found) {
+      box.innerHTML = "<p class='hint'>レースを選ぶと、確定したレースの結果が表示されます。</p>";
+      return;
+    }
+    const r = found.race;
+    const html = raceResultHtml(r);
+    box.innerHTML =
+      html ||
+      `<p class="hint">${escapeHtml(r.place || "")} ${escapeHtml(String(r.R || ""))}R の結果はまだ確定していません（確定から20分ほどで表示されます）。</p>`;
+  }
+
+  function raceResultHtml(r) {
+    const res = raceResultFor(r);
+    if (!res) return "";
+    const top = res.top;
+    const sh = r.shutuba || {};
+    const cols = Array.isArray(sh.mark_columns) ? sh.mark_columns : [];
+    const byUma = {};
+    for (const row of Array.isArray(sh.rows) ? sh.rows : []) {
+      byUma[String(row && row["馬番"] != null ? row["馬番"] : "").trim()] = row;
+    }
+    let html = `<h4>${escapeHtml(r.place || "")} ${escapeHtml(String(r.R || ""))}R ${escapeHtml(r.name || "")}`;
+    if (res.source) html += `<span class="race-result-src">（${escapeHtml(res.source)}）</span>`;
+    html += `</h4><table class="race-result-table"><thead><tr><th>着</th><th>馬番</th><th>馬名</th><th class="rr-margin">着差</th><th>人気</th><th>探偵の印</th></tr></thead><tbody>`;
+    for (const t of top) {
+      const row = byUma[String(t.umaban)] || {};
+      const marks = [];
+      for (const c of cols) {
+        const m = String(row[c] != null ? row[c] : "").trim();
+        if (!m || m === "-") continue;
+        const cls = m === "◎" ? ` class="${markHonmeiClass(c)}"` : "";
+        marks.push(`<span${cls}>${escapeHtml(m + c)}</span>`);
+      }
+      html += `<tr><td class="rr-rank">${escapeHtml(String(t.rank))}</td>`;
+      html += `<td class="rr-num">${escapeHtml(String(t.umaban))}</td>`;
+      // 着差は広い画面では専用の列、スマホ幅では馬名の下に出す（列が増えると馬名が細切れになるため）
+      const margin = escapeHtml(t.margin || "");
+      html += `<td class="rr-name">${escapeHtml(t.name || row["馬名"] || "")}`;
+      if (margin) html += `<span class="rr-margin-inline">${margin}</span>`;
+      html += `</td><td class="rr-margin">${margin}</td>`;
+      html += `<td class="rr-num">${t.ninki != null ? escapeHtml(String(t.ninki)) : "-"}</td>`;
+      html += `<td class="rr-marks">${marks.join(" ") || "-"}</td></tr>`;
+    }
+    html += "</tbody></table>";
+    html += payoutTableHtml(res.payouts);
+    return html;
+  }
+
+  /** 払戻金（単勝〜3連単）。複勝・ワイドは1券種に複数行あるので券種のセルを縦に結合する */
+  function payoutTableHtml(payouts) {
+    const list = Array.isArray(payouts) ? payouts.filter((p) => p && Array.isArray(p.items) && p.items.length) : [];
+    if (!list.length) return "";
+    let html = `<table class="race-payout-table"><thead><tr><th>券種</th><th>組番</th><th>払戻金</th><th>人気</th></tr></thead><tbody>`;
+    for (const p of list) {
+      p.items.forEach((it, i) => {
+        html += "<tr>";
+        if (i === 0) html += `<th scope="row" rowspan="${p.items.length}">${escapeHtml(p.type || "")}</th>`;
+        const yen = Number(it.yen);
+        html += `<td class="rp-combo">${escapeHtml(String(it.combo || ""))}</td>`;
+        html += `<td class="rp-yen">${Number.isFinite(yen) ? escapeHtml(yen.toLocaleString("ja-JP")) + "円" : "-"}</td>`;
+        html += `<td class="rp-ninki">${it.ninki != null ? escapeHtml(String(it.ninki)) + "番人気" : "-"}</td>`;
+        html += "</tr>";
+      });
+    }
+    html += "</tbody></table>";
+    return html;
   }
 
   /** "YYYY-MM-DD" を delta 日ずらす（閲覧端末のタイムゾーンに依存させない） */
