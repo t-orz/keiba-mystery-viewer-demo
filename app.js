@@ -262,6 +262,7 @@
       ホプ: "ホプキンス",
       "ハ/ホプ": "ハンター",
       ベ: "ベイカー",
+      ウ: "ウィギンズ",
     };
     return map[s] || s;
   }
@@ -274,6 +275,7 @@
       if (s === "ホプキンス" || s === "ホプ" || s.includes("ホプキンス") || s.includes("新馬")) return "ホプキンス";
       if (s === "ハンター" || s === "ハ" || s.includes("ハンター") || s.includes("夏")) return "ハンター";
       if (s === "ベイカー" || s === "ベ" || s.includes("ベイカー")) return "ベイカー";
+      if (s === "ウィギンズ" || s === "ウ" || s.includes("ウィギンズ")) return "ウィギンズ";
       // 旧スナップショットの買/様子ラベルはモーリアティ列由来とみなす
       if (s.includes("買") || s.includes("様子") || s.includes("見送")) return "モーリアティ";
       return "";
@@ -287,9 +289,11 @@
       row && row["モ"],
       row && (row["ハ/ホプ"] || row["ハ"] || row["ホプ"]),
       row && row["ベ"],
+      row && row["ウ"],
       row && row.cells && (row.cells["モ"] || row.cells["モーリアティ"]),
       row && row.cells && (row.cells["ハ/ホプ"] || row.cells["ハンター"] || row.cells["ホプキンス"]),
       row && row.cells && (row.cells["ベ"] || row.cells["ベイカー"]),
+      row && row.cells && (row.cells["ウ"] || row.cells["ウィギンズ"]),
     ];
     for (const c of candidates) {
       const n = mapPresence(c);
@@ -371,6 +375,29 @@
     return /障害|ジャンプ/.test(String(r.name || r.race_name || ""));
   }
 
+  // この値未満のレースは「非推奨」。順位が上位でも順位色を付けない（2026-10-24 の新しい計算から）。
+  // HOLMES_LOW_THRESHOLD 以上 HOLMES_BORDER_TOP 未満は「境界域」で、色は変えず要約に説明を添える。
+  // 線は race_edge_board.py の HOLMES_LOW_LINE / HOLMES_BORDER_LINE と同じ値にすること。
+  const HOLMES_LOW_THRESHOLD = 60;
+  const HOLMES_BORDER_TOP = 70;
+  const HOLMES_BORDER_NOTE = "境界域：やや信頼しにくい";
+  const HOLMES_LOW_NOTE = "非推奨";
+  function holmesIndexValue(r) {
+    // 算出前は仮の値なので非推奨・境界域を付けない
+    if (!r || isObstacleRace(r) || r.holmes_rank_text === "算出前") return null;
+    const s = String(r.holmes_index == null ? "" : r.holmes_index).trim();
+    if (!/^\d+(\.\d+)?$/.test(s)) return null;
+    return Number(s);
+  }
+  function isHolmesLow(r) {
+    const v = holmesIndexValue(r);
+    return v != null && v < HOLMES_LOW_THRESHOLD;
+  }
+  function isHolmesBorder(r) {
+    const v = holmesIndexValue(r);
+    return v != null && v >= HOLMES_LOW_THRESHOLD && v < HOLMES_BORDER_TOP;
+  }
+
   function jumpClass(rank) {
     const r = Number(rank);
     if (r === 1) return "jump rank-top";
@@ -399,6 +426,116 @@
     renderJumps();
   }
 
+  /* 直前予想が済んだかの表示（2026-10-18）。
+     サーバーが各レースに update_kind（最後の更新の種類）を付ける（auto-x holmes_morning.update_kind）:
+       pre_race＝直前予想（発走約10分前） / graded_1h＝重賞1時間前 / weather＝8時の天候・馬場の再予想 / morning＝朝一斉のまま
+     ジャンプボタンの下線は 2026-10-19 に廃止（ユーザー決定）。ボタンには直前予想済みをツールチップと読み上げだけで残す。
+     レース要約の先頭には状態ごとの帯を出し、朝一斉から変わった◎○を添える（morning_marks があるときだけ）。 */
+  const PRE_RACE_LEAD_MIN = 10;
+  const MARK_LOGIC_NAMES = {
+    ワ: "ワトソン",
+    アイ: "アイリーン",
+    モ: "モーリアティ",
+    "ハ/ホプ": "ハンター/ホプキンス",
+    ベ: "ベイカー",
+    ウ: "ウィギンズ",
+  };
+
+  function isPreRaceDone(r) {
+    return !!r && r.update_kind === "pre_race";
+  }
+
+  /** "◎5○1▲8△6,7" → { "◎": "5", "○": "1" }（◎○だけ） */
+  function honmeiTaikou(summary) {
+    const s = String(summary || "");
+    const pick = (sym) => {
+      const m = s.match(new RegExp(`${sym}([0-9,]+)`));
+      return m ? m[1] : "";
+    };
+    return { "◎": pick("◎"), "○": pick("○") };
+  }
+
+  function markNumsText(nums) {
+    const list = String(nums || "").split(",").filter(Boolean);
+    return list.length ? list.map((n) => circledNumber(n)).join("") : "なし";
+  }
+
+  /** 朝一斉から変わった◎○の一覧。朝の印が無ければ null（「変更なし」と区別する） */
+  function changedHonmeiTaikou(r) {
+    const morning = r && r.morning_marks;
+    if (!morning || typeof morning !== "object") return null;
+    const now = r.marks || {};
+    const out = [];
+    for (const key of Object.keys(now)) {
+      const a = honmeiTaikou(morning[key]);
+      const b = honmeiTaikou(now[key]);
+      for (const sym of ["◎", "○"]) {
+        if (a[sym] === b[sym] || (!a[sym] && !b[sym])) continue;
+        out.push(`${MARK_LOGIC_NAMES[key] || key}${sym} ${markNumsText(a[sym])}→${markNumsText(b[sym])}`);
+      }
+    }
+    return out;
+  }
+
+  function hhmmOf(predictedAt) {
+    const label = formatPredictedAtLabel(predictedAt);
+    const m = String(label).match(/(\d{2}:\d{2})$/);
+    return m ? m[1] : "";
+  }
+
+  function minutesBeforeStart(r, minutes) {
+    const t = raceStartDate(r, state.data && state.data.schedule_date);
+    if (!t) return "";
+    const d = new Date(t.getTime() - minutes * 60000);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function raceStarted(r) {
+    const t = raceStartDate(r, state.data && state.data.schedule_date);
+    return !!t && t.getTime() <= Date.now();
+  }
+
+  function preRaceBandHtml(r) {
+    if (!r || !r.predicted || !r.update_kind) return "";
+    const upd = hhmmOf(r.predicted_at);
+    const changes = changedHonmeiTaikou(r);
+    const changeText =
+      changes === null ? "" : changes.length ? `朝一斉から変わった印：${changes.join(" ／ ")}` : "朝一斉から印の変更はありません";
+    const nextPre = minutesBeforeStart(r, PRE_RACE_LEAD_MIN);
+    let kind = r.update_kind;
+    let title = "";
+    let sub = "";
+    if (kind === "pre_race") {
+      title = "直前予想済み";
+      sub = changeText;
+    } else if (kind === "graded_1h" || kind === "weather") {
+      title = kind === "graded_1h" ? "重賞1時間前予想済み" : "天候・馬場の変更で再予想";
+      const lead = kind === "weather" && r.update_note ? `${r.update_note} に変わったため予想し直しました。` : "";
+      const tail = raceStarted(r) ? "" : nextPre ? `直前予想は${nextPre}ごろに入ります` : "";
+      sub = [lead + changeText, tail].filter(Boolean).join("。");
+    } else if (raceStarted(r)) {
+      kind = "missed";
+      title = "直前予想は入りませんでした";
+      sub = `朝一斉の予想${upd ? `（${upd}）` : ""}が最終です`;
+    } else {
+      kind = "morning";
+      title = "朝一斉の予想のまま";
+      sub = `直前予想は発走の約${PRE_RACE_LEAD_MIN}分前${nextPre ? `（${nextPre}ごろ）` : ""}に入ります。印が変わることがあります`;
+    }
+    // 発走時刻はレース要約の条件の行に出すので帯には書かない（ユーザー決定 2026-10-18 案C）
+    const meta = kind === "missed" ? "発走済み" : upd ? `${upd}予想更新` : "";
+    return (
+      `<div class="prerace-band prerace-band--${kind}" role="status">` +
+      `<span class="prerace-band-icon" aria-hidden="true"></span>` +
+      `<div class="prerace-band-text"><p class="prerace-band-title">${escapeHtml(title)}` +
+      (meta ? ` <span class="prerace-band-meta">${escapeHtml(meta)}</span>` : "") +
+      `</p>` +
+      (sub ? `<p class="prerace-band-sub">${escapeHtml(sub)}</p>` : "") +
+      `</div></div>`
+    );
+  }
+
   function makeJumpButton(r, { nearestId } = {}) {
     const b = document.createElement("button");
     b.type = "button";
@@ -408,16 +545,21 @@
     const nearest = nearestId != null && String(r.race_id) === String(nearestId);
     let cls = jumpClass(r.holmes_index_rank);
     if (isObstacleRace(r)) cls += " is-obstacle";
+    else if (isHolmesLow(r)) cls += " is-holmes-low";
     if (selected) cls += " is-selected";
     if (nearest) cls += " is-nearest-prepost";
     b.className = cls;
     const rn = String(r.R || "").replace(/[Rr]$/, "") || "-";
     b.textContent = `${rn}R`;
     b.setAttribute("aria-pressed", selected ? "true" : "false");
-    const tip = r.holmes_rank_text && r.holmes_rank_text !== "算出前"
+    const tip0 = r.holmes_rank_text && r.holmes_rank_text !== "算出前"
       ? `${r.place} ${rn}R ${normalizeStartTime(r.start_time)}（${r.holmes_rank_text}）`
       : `${r.place} ${rn}R ${normalizeStartTime(r.start_time)}`.trim();
-    b.title = tip;
+    const tip = isHolmesLow(r)
+      ? `${tip0} ・ホームズ指数${HOLMES_LOW_THRESHOLD}未満（非推奨）`
+      : isHolmesBorder(r) ? `${tip0} ・${HOLMES_BORDER_NOTE}` : tip0;
+    b.title = isPreRaceDone(r) ? `${tip} ・直前予想済み` : tip;
+    if (isPreRaceDone(r)) b.setAttribute("aria-label", `${rn}R 直前予想済み`);
     b.addEventListener("click", () => selectRace(r.race_id, r.place, { scroll: false }));
     return b;
   }
@@ -619,6 +761,7 @@
     if (/ホプキンス/.test(label)) return "assets/cast/hopkins.png";
     if (bl === "hunter" || /ハンター/.test(label)) return "assets/cast/hunter.png";
     if (bl === "baker" || /ベイカー/.test(label)) return "assets/cast/baker.png";
+    if (bl === "wiggins" || /ウィギンズ/.test(label)) return "assets/cast/wiggins.png";
     return "";
   }
 
@@ -630,7 +773,7 @@
     }
     return (
       `ホームズ推奨: <span class="holmes-recommend">` +
-      `<img class="logic-cast-icon holmes-recommend-icon" src="${escapeAttr(icon)}" alt="" width="34" height="34" decoding="async" />` +
+      `<img class="logic-cast-icon holmes-recommend-icon" src="${escapeAttr(icon)}" alt="" width="34" height="34" decoding="async" onerror="this.remove()" />` +
       `<strong>${escapeHtml(label)}</strong></span>`
     );
   }
@@ -713,23 +856,37 @@
     const paceLine = paceLabel
       ? `<p class="meta race-pace">予想ペース: <strong>${escapeHtml(paceLabel)}</strong></p>`
       : "";
+    // 予想更新時間は帯（preRaceBandHtml）と重なるので、帯が出ないとき（予想前・update_kind の無い古い公開データ）だけ
+    // 発走時刻の行の上に出す（ユーザー決定 2026-10-18）
+    const bandHtml = preRaceBandHtml(r);
+    const predictedAtLine = bandHtml
+      ? ""
+      : `<p class="meta race-predicted-at">予想更新時間: <strong>${escapeHtml(predictedAtLabel)}</strong></p>`;
     let html = `
       <h3>${escapeHtml(r.place)} ${escapeHtml(r.R)}R ${escapeHtml(r.name || "")}</h3>
+      ${bandHtml}
+      ${predictedAtLine}
       <p class="meta">発走 ${escapeHtml(r.start_time || "-")}${coursePart} ／ 天気:${escapeHtml(r.weather || "-")} 馬場:${escapeHtml(r.baba || "-")}${fieldSizePart}</p>
       ${paceLine}
-      <p class="meta race-predicted-at">予想更新時間: <strong>${escapeHtml(predictedAtLabel)}</strong></p>
       <p class="meta">期待値偏差: <strong>${escapeHtml(r.dev)}</strong>（ランク ${escapeHtml(r.rank || "-")}）</p>
-      <p class="meta">ホームズ指数: <strong>${escapeHtml(formatHolmesIndexDisplay(r))}</strong>${r.holmes_morning_delta_text ? `<span class="holmes-delta">${escapeHtml(r.holmes_morning_delta_text)}</span>` : ""} ／ 当日レース内順位: <strong>${escapeHtml(r.holmes_rank_text || "算出前")}</strong></p>
+      <p class="meta">ホームズ指数: <strong>${escapeHtml(formatHolmesIndexDisplay(r))}</strong>${isHolmesLow(r) ? `<span class="holmes-band-note">（${HOLMES_LOW_NOTE}）</span>` : isHolmesBorder(r) ? `<span class="holmes-band-note">（${HOLMES_BORDER_NOTE}）</span>` : ""}${r.holmes_morning_delta_text ? `<span class="holmes-delta">${escapeHtml(r.holmes_morning_delta_text)}</span>` : ""} ／ 当日レース内順位: <strong>${escapeHtml(r.holmes_rank_text || "算出前")}</strong></p>
       ${r.reference_only ? `<p class="meta race-reference-only">${escapeHtml(r.reference_only_reason || "学習・ホームズ指数の対象外（参考予想）")}</p>` : ""}
       <p class="meta">${formatHolmesRecommendHtml(r)}</p>
       <div class="marks">
     `;
-    const specialistCell = (cells["ハ/ホプ"] && cells["ハ/ホプ"] !== "-") ? cells["ハ/ホプ"] : (cells["ベ"] || "-");
-    const specialistMark = (marks["ハ/ホプ"] && marks["ハ/ホプ"] !== "-") ? marks["ハ/ホプ"] : (marks["ベ"] || "-");
+    // 第3探偵の箱はハンター/ホプキンス → ベイカー → ウィギンズの順に、登場しているものを出す（設計上は排他）。
+    const pickSpecialist = (src) => {
+      for (const k of ["ハ/ホプ", "ベ", "ウ"]) {
+        if (src[k] && src[k] !== "-") return src[k];
+      }
+      return "-";
+    };
+    const specialistCell = pickSpecialist(cells);
+    const specialistMark = pickSpecialist(marks);
     for (const [k, label] of [["ワ", "ワトソン"], ["アイ", "アイリーン"], ["モ", "モーリアティ"]]) {
       html += `<div class="mark-box"><strong>${label}</strong>${escapeHtml(cells[k] || "-")}<br/><span>${escapeHtml(marks[k] || "-")}</span></div>`;
     }
-    html += `<div class="mark-box"><strong>ベイカー/ハンター/ホプキンス</strong>${escapeHtml(specialistCell)}<br/><span>${escapeHtml(specialistMark)}</span></div>`;
+    html += `<div class="mark-box"><strong>ベイカー/ハンター/ホプキンス/ウィギンズ</strong>${escapeHtml(specialistCell)}<br/><span>${escapeHtml(specialistMark)}</span></div>`;
     html += "</div><div class='pdf-links'>";
     if (r.pdf_url) html += `<a href="${escapeAttr(r.pdf_url)}" target="_blank" rel="noopener">予想詳細PDF</a>`;
     if (r.help_pdf_url) html += `<a href="${escapeAttr(r.help_pdf_url)}" target="_blank" rel="noopener">項目説明PDF</a>`;
@@ -764,6 +921,7 @@
     if (col === "アイリーン") return "mark-honmei mark-i";
     if (col === "モーリアティ") return "mark-honmei mark-m";
     if (col === "ベイカー") return "mark-honmei mark-b";
+    if (col === "ウィギンズ") return "mark-honmei mark-wg";
     return "mark-honmei mark-h";
   }
 
@@ -796,6 +954,20 @@
     if (!box) return;
     syncShutubaSortControls();
     const found = findRace(state.raceId);
+    // 表の上に「東京11R 秋華賞」のように競馬場・レース番号・レース名を出す
+    const title = $("shutubaRaceTitle");
+    if (title) {
+      const label = found
+        ? [
+            `${found.race.place || found.venue.place || ""}${found.race.R != null ? `${found.race.R}R` : ""}`,
+            String(found.race.name || "").trim(),
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : "";
+      title.textContent = label;
+      title.hidden = !label;
+    }
     if (!found) {
       box.innerHTML = "<p class='hint'>レースを選ぶと出馬表が表示されます。</p>";
       return;
@@ -830,7 +1002,12 @@
         if (c === "脚質") classes.push("rs-cell");
         const cls = classes.length ? ` class="${classes.join(" ")}"` : "";
         const badges = c === "馬名" ? horseBadgesHtml(row.badges) : "";
-        const body = c === "脚質" ? runningStyleCellHtml(row[c]) : escapeHtml(row[c] ?? "");
+        const body =
+          c === "脚質"
+            ? runningStyleCellHtml(row[c])
+            : c === "馬番"
+              ? prevRunTriggerHtml(found.race.race_id, row)
+              : escapeHtml(row[c] ?? "");
         html += `<td${cls}${styleAttr}>${body}${badges}</td>`;
       }
       html += "</tr>";
@@ -843,11 +1020,20 @@
         .join(" / ");
       html += `<p class="hint horse-badge-legend"><strong>${title}</strong>${items}</p>`;
     }
+    // 枠番・馬名・騎手・斤量・性齢・馬体重を JRA 公式の値に差し替えたレース（auto-x jra_display_facts.py）
+    if (shutuba.facts_source) {
+      html += `<p class="hint shutuba-facts-source">枠番・馬名・騎手・斤量・性齢・馬体重の出典：${escapeHtml(shutuba.facts_source)}</p>`;
+    }
+    if (shutuba.rows.some((row) => prevRunFor(found.race.race_id, row["馬番"]))) {
+      html +=
+        '<p class="hint prev-run-hint">馬番にマウスを重ねる（スマホはタップする）と前走・前々走が出ます。前走・前々走の出典：JRA（小窓の下段の一言はこのサイトで計算）。</p>';
+    }
     if (!shutuba.predicted) {
       html += '<p class="hint">予想前の出馬表です（印列は予想後に表示されます）。</p>';
     }
     box.innerHTML = html;
     syncShutubaStickyOffset(box);
+    syncPrevRunPopAfterRender(box);
   }
 
   /** 馬名欄の略号（D / B / NB）。判定も色もサーバー側 horse_name_badges が出所。
@@ -1142,6 +1328,153 @@
     return best;
   }
 
+  /* 最後の直線の風（2026-10-17）。気象庁アメダスの最寄り観測点を閲覧者のブラウザから直接読む
+     （CORS 許可あり・1観測点 約8KB）。表示だけで予想には使わない。
+     bearing は直線をゴールへ向かう進行方向（北=0°・時計回り）。OSM の走路と実測コース形状の
+     照合で求め、180°取り違えはスタンド側の建物面積で検算した（サーバー ~/research_wind/）。 */
+  const WIND_STRETCH = {
+    札幌: { bearing: 179.4, hand: "right", station: "14163", stationName: "札幌", km: 1.8 },
+    函館: { bearing: 123.5, hand: "right", station: "23232", stationName: "函館", km: 4.3 },
+    福島: { bearing: 26.5, hand: "right", station: "36127", stationName: "福島", km: 1.3 },
+    新潟: { bearing: 241.8, hand: "left", station: "54236", stationName: "松浜", km: 6.5 },
+    東京: { bearing: 267.5, hand: "left", station: "44116", stationName: "府中", km: 2.1 },
+    中山: { bearing: 14.8, hand: "right", station: "45106", stationName: "船橋", km: 7.6 },
+    中京: { bearing: 234.1, hand: "left", station: "51216", stationName: "大府", km: 9.0 },
+    京都: { bearing: 53.5, hand: "right", station: "61326", stationName: "京田辺", km: 9.1 },
+    阪神: { bearing: 286.8, hand: "right", station: "62051", stationName: "豊中", km: 7.1 },
+    小倉: { bearing: 156.5, hand: "right", station: "82056", stationName: "八幡", km: 12.1 },
+  };
+  const WIND_DIR16 = ["", "北北東", "北東", "東北東", "東", "東南東", "南東", "南南東", "南", "南南西", "南西", "西南西", "西", "西北西", "北西", "北北西", "北"];
+  const WIND_REFRESH_MS = 10 * 60 * 1000;
+  const windState = { byPlace: {}, loadedAt: 0, loading: false, frozenDay: "" };
+  /** 最終レースの発走からこの分だけ後の観測で風を止める（その10分観測にレースが入る） */
+  const WIND_FREEZE_AFTER_LAST_START_MIN = 10;
+
+  /** 当日最終レース発走＋10分を "YYYYMMDDHHMM00"（アメダスのキーと同じ形）で。発走時刻が無ければ "" */
+  function windFreezeKey(data) {
+    let last = -1;
+    for (const v of Array.isArray(data.venues) ? data.venues : []) {
+      for (const r of Array.isArray(v && v.races) ? v.races : []) {
+        const hm = normalizeStartTime(r && r.start_time);
+        if (hm) last = Math.max(last, Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5)));
+      }
+    }
+    if (last < 0) return "";
+    const t = Math.min(last + WIND_FREEZE_AFTER_LAST_START_MIN, 23 * 60 + 50);
+    const ymd = String(data.schedule_date || "").replace(/-/g, "");
+    return `${ymd}${String(Math.floor(t / 60)).padStart(2, "0")}${String(t % 60).padStart(2, "0")}00`;
+  }
+
+  /** 風向（吹いてくる方位 1〜16）と直線の向きから、追い風／向かい風／横風を判定する。
+      rel は「風が吹いていく向き」を、馬が上へ走り内ラチが左にある図に置いたときの角度
+      （0=真上=追い風、180=向かい風、-90=外から内へ吹く横風、+90=内から外へ）。
+      右回りは内ラチが右手なので左右を反転して、どの場でも内ラチを左に描く */
+  function windRelation(dirCode, speed, info) {
+    if (!dirCode || !(speed > 0)) return { label: "無風", cls: "calm", rel: 0 };
+    const toward = (dirCode * 22.5 + 180) % 360;
+    let rel = ((toward - info.bearing + 540) % 360) - 180;
+    if (info.hand === "right") rel = -rel;
+    const diff = Math.abs(rel);
+    if (diff <= 45) return { label: "追い風", cls: "tail", rel };
+    if (diff >= 135) return { label: "向かい風", cls: "head", rel };
+    return { label: rel < 0 ? "スタンド側からの横風" : "内馬場側からの横風", cls: "cross", rel };
+  }
+
+  function jstTodayYmd() {
+    const d = new Date(Date.now() + 9 * 3600 * 1000);
+    return d.toISOString().slice(0, 10);
+  }
+
+  /** 当日開催の表示中だけ取りに行く（過去日の表示に「現在の風」を出さない） */
+  function windApplies(data) {
+    return !!data && !isDayClosedSnapshot(data) && String(data.schedule_date || "") === jstTodayYmd();
+  }
+
+  async function loadWind(data, { force = false } = {}) {
+    if (!windApplies(data)) {
+      windState.byPlace = {};
+      return;
+    }
+    if (windState.loading) return;
+    // 最終レースが終わった後は、そのレース時点の風で止めて取りに行かない
+    if (windState.frozenDay === String(data.schedule_date || "") && Object.keys(windState.byPlace).length) return;
+    if (!force && Date.now() - windState.loadedAt < WIND_REFRESH_MS) return;
+    const places = (Array.isArray(data.venues) ? data.venues : [])
+      .map((v) => String((v && v.place) || "").trim())
+      .filter((p) => WIND_STRETCH[p]);
+    if (!places.length) return;
+    windState.loading = true;
+    try {
+      const base = "https://www.jma.go.jp/bosai/amedas/data";
+      const latest = String(await (await fetch(`${base}/latest_time.txt`, { cache: "no-store" })).text()).trim();
+      const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(latest);
+      if (!m) return;
+      const latestKey = `${m[1]}${m[2]}${m[3]}${m[4]}${m[5]}00`;
+      const freezeKey = windFreezeKey(data);
+      const frozen = !!freezeKey && latestKey >= freezeKey;
+      // 止めるときは最終レース時点を含む3時間ブロックを読む（最新のブロックだと後の観測しか無い）
+      const k = frozen ? freezeKey : latestKey;
+      const block = `${k.slice(0, 8)}_${String(Math.floor(Number(k.slice(8, 10)) / 3) * 3).padStart(2, "0")}`;
+      const next = {};
+      await Promise.all(
+        places.map(async (place) => {
+          const info = WIND_STRETCH[place];
+          try {
+            const res = await fetch(`${base}/point/${info.station}/${block}.json`, { cache: "no-store" });
+            if (!res.ok) return;
+            const series = await res.json();
+            const keys = Object.keys(series || {}).sort();
+            for (let i = keys.length - 1; i >= 0; i--) {
+              if (frozen && keys[i] > freezeKey) continue;
+              const row = series[keys[i]] || {};
+              const dir = Array.isArray(row.windDirection) ? row.windDirection[0] : null;
+              const spd = Array.isArray(row.wind) ? row.wind[0] : null;
+              if (typeof spd !== "number" || typeof dir !== "number") continue;
+              next[place] = { dir, speed: spd, at: `${keys[i].slice(8, 10)}:${keys[i].slice(10, 12)}` };
+              break;
+            }
+          } catch (e) {
+            /* 1場の失敗で他の場を落とさない */
+          }
+        })
+      );
+      windState.byPlace = next;
+      windState.loadedAt = Date.now();
+      windState.frozenDay = frozen && Object.keys(next).length ? String(data.schedule_date || "") : "";
+    } catch (e) {
+      /* 気象庁に届かないときは風の行を出さないだけ */
+    } finally {
+      windState.loading = false;
+    }
+    if (state.data === data) renderTrackConditions(data);
+  }
+
+  /** 小さな図: テレビ中継と同じくスタンド側から見た向き。上の横線が内ラチ（奥）、
+      馬は右回りなら右→左、左回りなら左→右へ走る。矢印は風が吹いていく向き。
+      rel（馬が上へ走り内ラチが左の図での角度）を、右回りは鏡映して -90-rel、左回りは 90+rel に移す */
+  function trackWindHtml(place) {
+    const info = WIND_STRETCH[place];
+    const w = windState.byPlace[place];
+    if (!info || !w) return "";
+    const rel = windRelation(w.dir, w.speed, info);
+    // 風速は常に小数1桁（4 → 4.0）
+    const speedText = Number(w.speed).toFixed(1);
+    const dirName = WIND_DIR16[w.dir] || "静穏";
+    // 例: 「向かい風 3.5m/s（府中 北西 11:40）」
+    const title =
+      `${rel.label}${rel.cls === "calm" ? "" : ` ${speedText}m/s`}（${info.stationName} ${dirName} ${w.at}）`;
+    const screenDeg = info.hand === "right" ? -90 - rel.rel : 90 + rel.rel;
+    const arrow =
+      rel.cls === "calm"
+        ? '<circle cx="8" cy="9.5" r="1.6" fill="currentColor"/>'
+        : `<g transform="rotate(${screenDeg.toFixed(0)} 8 9.5)"><path d="M8 14.5V4.5M4.8 7.6 8 4.4l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+    return (
+      `<span class="track-cond-wind track-cond-wind--${rel.cls}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">` +
+      `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 1.5h14" stroke="currentColor" stroke-width="1.2" opacity="0.45"/>${arrow}</svg>` +
+      `<span class="track-cond-wind-speed">${rel.cls === "calm" ? "0.0" : escapeHtml(speedText)}</span></span>`
+    );
+  }
+
   function renderTrackConditions(data) {
     const box = $("trackCond");
     const list = $("trackCondList");
@@ -1183,11 +1516,19 @@
           "</span>" +
           trackWeatherHtml(weather) +
           cells +
+          trackWindHtml(place) +
           "</li>"
       );
     }
     list.innerHTML = items.join("");
     box.hidden = !items.length;
+    // 風の観測時刻は場ごとでなく見出しに1回だけ（全場が同じアメダスの時刻）
+    const windAt = $("trackCondWindAt");
+    if (windAt) {
+      const at = Object.values(windState.byPlace).map((w) => w.at).sort().pop() || "";
+      windAt.textContent = at ? `風${at}` : "";
+      windAt.hidden = !at;
+    }
   }
 
   function applyData(data, { flash = false } = {}) {
@@ -1207,7 +1548,9 @@
       window.setTimeout(() => el.classList.remove("just-updated"), 2500);
     }
     renderUpdateTiming(data);
+    loadIncident(data);
     renderTrackConditions(data);
+    loadWind(data);
     renderMarkWeeklyStats(data);
     refreshPrevPdfBlock();
     renderTop5();
@@ -1235,6 +1578,7 @@
       const data = await resp.json();
       applyData(data, { flash: silent });
       loadResults();
+      loadPrevRuns();
     } catch (e) {
       if (!silent) {
         $("updatedAt").innerHTML = `<span class="error">スナップショット取得失敗: ${escapeHtml(e.message || e)}</span>`;
@@ -1304,10 +1648,13 @@
        開いたときに初めて取りに行く。
      - 前日のスナップショットが無い日（＝連続開催の初日）で遡りを打ち切るので、
        開催週をまたいで前週の開催を拾うことはない。
-     - PDF 自体は Supabase 側で 8 日経つと消えるため、古い日はリンク切れになりうる。 */
+     - PDF 自体は Supabase 側で 8 日経つと消えるため、古い日はリンク切れになりうる。
+     - サイトクローズ後（latest.json が cleared）は、閉じた開催日そのものも並べる。
+       週の開催最終日の PDF を、次の開催日の朝一斉で latest.json が差し替わるまで開けるようにするため。 */
   const PREV_PDF_MAX_DAYS = 3;
   const PREV_PDF_DAY_LABELS = ["前日", "前々日", "3日前"];
-  const prevPdfState = { days: [], probedFor: "", loadedFor: "", loading: false };
+  const PREV_PDF_CLOSED_DAY_LABELS = ["直近の開催日", "その前日", "その前々日"];
+  const prevPdfState = { days: [], closed: false, probedFor: "", loadedFor: "", loading: false };
 
   /** cfg.SNAPSHOT_URL（= .../snapshots/latest.json）と同じ場所の日付付き URL */
   function datedSnapshotUrl(day) {
@@ -1318,6 +1665,68 @@
 
   function withCacheBust(url) {
     return url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+  }
+
+  /* ===== 障害のお知らせ ======================================================
+     表示データに影響する重大な障害があった日は、サーバーが incidents/<開催日>.json を置く
+     （public_incident_notice.py）。当日の表示中だけ「最終更新日時」の下に出し、
+     ファイルが無い日・過去日の表示・取得失敗時は隠したまま。 */
+  const INCIDENT_MIN_INTERVAL_MS = 60 * 1000;
+  const incidentState = { day: "", fetchedAt: 0, loading: false };
+
+  function incidentUrl(day) {
+    const base = String(cfg.SNAPSHOT_URL || "").split("?")[0];
+    if (!base || !/snapshots\/latest\.json$/.test(base)) return "";
+    return base.replace(/snapshots\/latest\.json$/, `incidents/${day}.json`);
+  }
+
+  function renderIncident(items) {
+    const box = $("incidentNotice");
+    if (!box) return;
+    const list = Array.isArray(items) ? items.filter((it) => it && (it.title || it.body)) : [];
+    if (!list.length) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    box.innerHTML =
+      '<h2 class="incident-notice-title">【障害のお知らせ】</h2>' +
+      list
+        .map(
+          (it) =>
+            '<div class="incident-notice-item">' +
+            (it.title ? `<p class="incident-notice-head">${escapeHtml(it.title)}</p>` : "") +
+            (it.body ? `<p class="incident-notice-body">${escapeHtml(it.body)}</p>` : "") +
+            "</div>"
+        )
+        .join("");
+    box.hidden = false;
+  }
+
+  async function loadIncident(data) {
+    const day = String((data && data.schedule_date) || "").trim();
+    if (!day || day !== jstTodayYmd() || isDayClosedSnapshot(data)) {
+      renderIncident([]);
+      return;
+    }
+    const now = Date.now();
+    if (incidentState.loading) return;
+    if (incidentState.day === day && now - incidentState.fetchedAt < INCIDENT_MIN_INTERVAL_MS) return;
+    const url = incidentUrl(day);
+    if (!url) return;
+    incidentState.loading = true;
+    try {
+      const resp = await fetch(withCacheBust(url), { cache: "no-store" });
+      // ファイルが無い（平常時）は 400/404 が返る
+      const body = resp.ok ? await resp.json() : null;
+      renderIncident(body && body.schedule_date === day ? body.items : []);
+      incidentState.day = day;
+      incidentState.fetchedAt = now;
+    } catch (e) {
+      /* 取れないときは出さないだけ */
+    } finally {
+      incidentState.loading = false;
+    }
   }
 
   /* ===== 確定結果（1〜5着） ==================================================
@@ -1366,6 +1775,181 @@
       resultsState.loading = false;
     }
   }
+
+  /* 馬名に重ねる前走・前々走（2026-10-18）。
+     サーバーが JRA 公式の詳細出馬表から prev_runs/<開催日>.json を作る（public_prev_runs.py）。
+     事実は前走・前々走の最小限だけ。こちらで計算した一言を添え、出典（JRA）は出馬表の下の案内に必ず出す
+     （JRA-VAN・netkeiba 由来のデータは規約上ここには出さない）。
+     PC は馬番にマウスを重ねると、スマホは馬番をタップすると小窓を開く（ユーザー選択 2026-10-18。
+     馬番の列は横スクロールしても左に固定なので、どの列を見ていても開ける）。ファイルが無ければ馬番はそのまま。 */
+  const PREV_RUNS_MIN_INTERVAL_MS = 10 * 60 * 1000;
+  const prevRunsState = { day: "", races: {}, fetchedAt: 0, loading: false };
+
+  function prevRunsUrl(day) {
+    const base = String(cfg.SNAPSHOT_URL || "").split("?")[0];
+    if (!base || !/snapshots\/latest\.json$/.test(base)) return "";
+    return base.replace(/snapshots\/latest\.json$/, `prev_runs/${day}.json`);
+  }
+
+  async function loadPrevRuns() {
+    const day = String((state.data && state.data.schedule_date) || "").trim();
+    if (!day || prevRunsState.loading || isDayClosedSnapshot(state.data)) return;
+    const now = Date.now();
+    if (prevRunsState.day === day && now - prevRunsState.fetchedAt < PREV_RUNS_MIN_INTERVAL_MS) return;
+    const url = prevRunsUrl(day);
+    if (!url) return;
+    if (prevRunsState.day !== day) {
+      prevRunsState.day = day;
+      prevRunsState.races = {};
+    }
+    prevRunsState.loading = true;
+    try {
+      const resp = await fetch(withCacheBust(url), { cache: "no-store" });
+      // 朝一斉の公開から数分はファイルが無い（4xx）。そのときは馬名をそのまま出す
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.schedule_date === day && data.races && typeof data.races === "object") {
+          const changed = JSON.stringify(data.races) !== JSON.stringify(prevRunsState.races);
+          prevRunsState.races = data.races;
+          if (changed && state.raceId) renderShutuba();
+        }
+      }
+      prevRunsState.fetchedAt = now;
+    } catch (_) {
+      /* 次の周期でやり直す */
+    } finally {
+      prevRunsState.loading = false;
+    }
+  }
+
+  function prevRunFor(raceId, umaban) {
+    const day = String((state.data && state.data.schedule_date) || "");
+    if (prevRunsState.day !== day) return null;
+    const race = prevRunsState.races[String(raceId || "")];
+    return (race && race[String(umaban ?? "").trim()]) || null;
+  }
+
+  function prevRunTriggerHtml(raceId, row) {
+    const num = escapeHtml(row["馬番"] ?? "");
+    if (!prevRunFor(raceId, row["馬番"])) return num;
+    // 小窓の見出しは馬名。公開側が足す接尾辞（[初走] など）は外す
+    const name = String(row["馬名"] ?? "").replace(/\s*\[[^\]]*\]|\s*🔥/g, "").trim();
+    return (
+      `<button type="button" class="prev-run-trigger" data-race="${escapeAttr(String(raceId))}"` +
+      ` data-umaban="${escapeAttr(String(row["馬番"]).trim())}" data-name="${escapeAttr(name)}"` +
+      ` aria-label="${escapeAttr(`${num}番 ${name} の前走・前々走`)}" aria-haspopup="dialog" aria-expanded="false">${num}</button>`
+    );
+  }
+
+  function prevRunLineHtml(r, today) {
+    const [y, m, d] = String(r.date || "").split("-").map((x) => Number.parseInt(x, 10));
+    const date = y && m && d ? (String(today || "").startsWith(String(y)) ? `${m}/${d}` : `${y}/${m}/${d}`) : "";
+    const race = [r.race, r.cls ? `(${r.cls})` : ""].join("");
+    const course = r.distance ? `${r.surface || ""}${r.distance}` : "";
+    const head = [date, r.place, race, course, r.cond, r.field ? `${r.field}頭` : ""].filter(Boolean).join(" ");
+    const rank = String(r.rank || "");
+    let result = /^\d+$/.test(rank) ? `${rank}着` : rank;
+    if (r.pop) result += `（${r.pop}番人気）`;
+    if (/^\d+$/.test(rank) && r.margin !== undefined && r.margin !== "") {
+      result += rank === "1" ? ` 2着に${r.margin}秒差` : ` 1着と${r.margin}秒差`;
+    }
+    // 馬体重（10-18 追加）。計量の無い走（海外など）は出さない
+    if (Number.isFinite(Number(r.weight)) && Number(r.weight) > 0) result += `・${Number(r.weight)}kg`;
+    return (
+      `<li><span class="prev-run-label">${escapeHtml(r.label || "")}</span><span>${escapeHtml(head)}</span>` +
+      `<span class="prev-run-result">${escapeHtml(result)}</span></li>`
+    );
+  }
+
+  function prevRunPopHtml(name, pr) {
+    const today = String((state.data && state.data.schedule_date) || "");
+    const runs = Array.isArray(pr.runs) ? pr.runs : [];
+    const notes = Array.isArray(pr.notes) ? pr.notes.filter(Boolean) : [];
+    let html = `<p class="prev-run-head">${escapeHtml(name)}</p>`;
+    if (runs.length) html += `<ul class="prev-run-list">${runs.map((r) => prevRunLineHtml(r, today)).join("")}</ul>`;
+    if (notes.length) html += `<p class="prev-run-notes">${notes.map(escapeHtml).join("・")}</p>`;
+    return html;
+  }
+
+  let prevRunPopEl = null;
+  let prevRunAnchor = null;
+  const prevRunCanHover = () =>
+    !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+
+  function hidePrevRunPop() {
+    if (prevRunPopEl) prevRunPopEl.hidden = true;
+    if (prevRunAnchor) prevRunAnchor.setAttribute("aria-expanded", "false");
+    prevRunAnchor = null;
+  }
+
+  function showPrevRunPop(btn) {
+    const pr = prevRunFor(btn.dataset.race, btn.dataset.umaban);
+    if (!pr) return hidePrevRunPop();
+    if (!prevRunPopEl) {
+      prevRunPopEl = document.createElement("div");
+      prevRunPopEl.className = "prev-run-pop";
+      prevRunPopEl.setAttribute("role", "dialog");
+      prevRunPopEl.setAttribute("aria-label", "前走・前々走");
+      prevRunPopEl.hidden = true;
+      document.body.appendChild(prevRunPopEl);
+    }
+    if (prevRunAnchor && prevRunAnchor !== btn) prevRunAnchor.setAttribute("aria-expanded", "false");
+    const vw = document.documentElement.clientWidth;
+    const gutter = 8;
+    // 100vw はスクロールバーを含むので、実際の表示幅から決める（はみ出すと横スクロールが出る）
+    prevRunPopEl.style.maxWidth = `${Math.min(384, vw - gutter * 2)}px`;
+    prevRunPopEl.innerHTML = prevRunPopHtml(btn.dataset.name || btn.textContent, pr);
+    prevRunPopEl.hidden = false;
+    const rect = btn.getBoundingClientRect();
+    const pw = prevRunPopEl.offsetWidth;
+    const ph = prevRunPopEl.offsetHeight;
+    let left = Math.min(rect.left, vw - pw - gutter);
+    left = Math.max(gutter, left);
+    let top = rect.bottom + 4;
+    // 下に入りきらず上に入るなら馬名の上に出す
+    if (top + ph > window.innerHeight - gutter && rect.top - ph - 4 > gutter) top = rect.top - ph - 4;
+    prevRunPopEl.style.left = `${left + window.scrollX}px`;
+    prevRunPopEl.style.top = `${top + window.scrollY}px`;
+    prevRunAnchor = btn;
+    btn.setAttribute("aria-expanded", "true");
+  }
+
+  /** 出馬表はポーリングで描き直されるので、開いている小窓は同じ馬の新しいボタンに付け替える */
+  function syncPrevRunPopAfterRender(box) {
+    if (!prevRunAnchor || !prevRunPopEl || prevRunPopEl.hidden) return;
+    const { race, umaban } = prevRunAnchor.dataset;
+    const next = Array.from(box.querySelectorAll(".prev-run-trigger")).find(
+      (b) => b.dataset.race === race && b.dataset.umaban === umaban
+    );
+    if (next) showPrevRunPop(next);
+    else hidePrevRunPop();
+  }
+
+  document.addEventListener("mouseover", (e) => {
+    if (!prevRunCanHover() || !e.target.closest) return;
+    const btn = e.target.closest(".prev-run-trigger");
+    if (btn && btn !== prevRunAnchor) showPrevRunPop(btn);
+  });
+  document.addEventListener("mouseout", (e) => {
+    if (!prevRunCanHover() || !prevRunAnchor) return;
+    const to = e.relatedTarget;
+    if (to && (prevRunAnchor.contains(to) || (prevRunPopEl && prevRunPopEl.contains(to)))) return;
+    const from = e.target;
+    if (prevRunAnchor.contains(from) || (prevRunPopEl && prevRunPopEl.contains(from))) hidePrevRunPop();
+  });
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest ? e.target.closest(".prev-run-trigger") : null;
+    if (btn) {
+      if (prevRunAnchor === btn && !prevRunCanHover()) hidePrevRunPop();
+      else showPrevRunPop(btn);
+      return;
+    }
+    if (prevRunPopEl && !prevRunPopEl.contains(e.target)) hidePrevRunPop();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") hidePrevRunPop();
+  });
+  window.addEventListener("resize", hidePrevRunPop);
 
   /** 選択中レースの確定結果。まだ無ければ null */
   function raceResultFor(r) {
@@ -1419,7 +2003,7 @@
     }
     let html = `<h4>${escapeHtml(r.place || "")} ${escapeHtml(String(r.R || ""))}R ${escapeHtml(r.name || "")}`;
     if (res.source) html += `<span class="race-result-src">（${escapeHtml(res.source)}）</span>`;
-    html += `</h4><table class="race-result-table"><thead><tr><th>着</th><th>馬番</th><th>馬名</th><th class="rr-margin">着差</th><th>人気</th><th>探偵の印</th></tr></thead><tbody>`;
+    html += `</h4><table class="race-result-table"><thead><tr><th>着</th><th>枠</th><th>馬番</th><th>馬名</th><th class="rr-jockey">騎手</th><th class="rr-margin">着差</th><th>人気</th><th>探偵の印</th></tr></thead><tbody>`;
     for (const t of top) {
       const row = byUma[String(t.umaban)] || {};
       const marks = [];
@@ -1430,12 +2014,22 @@
         marks.push(`<span${cls}>${escapeHtml(m + c)}</span>`);
       }
       html += `<tr><td class="rr-rank">${escapeHtml(String(t.rank))}</td>`;
+      // 枠番は出馬表の行から引き、色も出馬表と同じ枠色にする
+      const st = row._style || {};
+      const waku = String(row["枠番"] != null ? row["枠番"] : "").trim();
+      const wakuStyle = waku && st.frame_bg
+        ? ` style="background:${escapeAttr(st.frame_bg)};color:${escapeAttr(st.frame_fg || "#000")}"`
+        : "";
+      html += `<td class="rr-num rr-waku"${wakuStyle}>${escapeHtml(waku || "-")}</td>`;
       html += `<td class="rr-num">${escapeHtml(String(t.umaban))}</td>`;
-      // 着差は広い画面では専用の列、スマホ幅では馬名の下に出す（列が増えると馬名が細切れになるため）
+      // 騎手・着差は広い画面では専用の列、スマホ幅では馬名の下に出す（列が増えると馬名が細切れになるため）
+      // 騎手は確定結果の値（乗り替わり後）を優先し、無い古い結果は出馬表の騎手で補う
       const margin = escapeHtml(t.margin || "");
+      const jockey = escapeHtml(t.jockey || row["騎手"] || "");
       html += `<td class="rr-name">${escapeHtml(t.name || row["馬名"] || "")}`;
-      if (margin) html += `<span class="rr-margin-inline">${margin}</span>`;
-      html += `</td><td class="rr-margin">${margin}</td>`;
+      const inline = [jockey, margin].filter(Boolean).join(" ");
+      if (inline) html += `<span class="rr-margin-inline">${inline}</span>`;
+      html += `</td><td class="rr-jockey">${jockey}</td><td class="rr-margin">${margin}</td>`;
       html += `<td class="rr-num">${t.ninki != null ? escapeHtml(String(t.ninki)) : "-"}</td>`;
       html += `<td class="rr-marks">${marks.join(" ") || "-"}</td></tr>`;
     }
@@ -1444,10 +2038,30 @@
     return html;
   }
 
-  /** 払戻金（単勝〜3連単）。複勝・ワイドは1券種に複数行あるので券種のセルを縦に結合する */
+  /** 払戻金（単勝〜3連単）。テレビ中継と同じく公式の券種順で左の列から右の列へ流す。
+      行数がほぼ半分になる券種の切れ目で2つの表に分け、スマホ幅では縦に並べる */
   function payoutTableHtml(payouts) {
     const list = Array.isArray(payouts) ? payouts.filter((p) => p && Array.isArray(p.items) && p.items.length) : [];
     if (!list.length) return "";
+    const total = list.reduce((n, p) => n + p.items.length, 0);
+    let acc = 0;
+    let cut = list.length;
+    let bestDiff = Infinity;
+    list.forEach((p, i) => {
+      acc += p.items.length;
+      const diff = Math.abs(total - 2 * acc);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        cut = i + 1;
+      }
+    });
+    const right = list.slice(cut);
+    if (!right.length) return payoutColumnHtml(list);
+    return `<div class="race-payout-split">${payoutColumnHtml(list.slice(0, cut))}${payoutColumnHtml(right)}</div>`;
+  }
+
+  /** 払戻金の表1つぶん。複勝・ワイドは1券種に複数行あるので券種のセルを縦に結合する */
+  function payoutColumnHtml(list) {
     let html = `<table class="race-payout-table"><thead><tr><th>券種</th><th>組番</th><th>払戻金</th><th>人気</th></tr></thead><tbody>`;
     for (const p of list) {
       p.items.forEach((it, i) => {
@@ -1496,7 +2110,8 @@
 
   function formatPrevPdfDayLabel(day, idx) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
-    const name = PREV_PDF_DAY_LABELS[idx] || `${idx + 1}日前`;
+    const labels = prevPdfState.closed ? PREV_PDF_CLOSED_DAY_LABELS : PREV_PDF_DAY_LABELS;
+    const name = labels[idx] || `${idx + 1}日前`;
     if (!m) return `${day} ${name}`;
     const wd = "日月火水木金土".charAt(
       new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay()
@@ -1504,10 +2119,11 @@
     return `${Number(m[2])}/${Number(m[3])}（${wd}）の予想 ［${name}］`;
   }
 
-  /** 遡れる前日の一覧。途切れた時点で打ち切る＝連続開催のぶんだけ返る。 */
-  async function probePrevPdfDays(baseDay) {
+  /** 遡れる前日の一覧。途切れた時点で打ち切る＝連続開催のぶんだけ返る。
+      includeBase のときは baseDay 自身から調べる（クローズ後の開催日）。 */
+  async function probePrevPdfDays(baseDay, { includeBase = false } = {}) {
     const days = [];
-    let day = baseDay;
+    let day = includeBase ? shiftDay(baseDay, 1) : baseDay;
     for (let i = 0; i < PREV_PDF_MAX_DAYS; i += 1) {
       day = shiftDay(day, -1);
       const url = day ? datedSnapshotUrl(day) : "";
@@ -1714,14 +2330,17 @@
     }
   }
 
-  /** 連続開催の2日目以降だけブロックを出す（前日が無ければ隠したまま） */
+  /** 連続開催の2日目以降とクローズ後だけブロックを出す（前日が無ければ隠したまま） */
   async function refreshPrevPdfBlock() {
     const block = $("prevPdfBlock");
     if (!block) return;
     const baseDay = prevPdfBaseDay();
-    if (!baseDay || prevPdfState.probedFor === baseDay) return;
-    prevPdfState.probedFor = baseDay;
-    const days = await probePrevPdfDays(baseDay);
+    const closed = isDayClosedSnapshot(state.data);
+    const key = `${baseDay}|${closed ? "closed" : "open"}`;
+    if (!baseDay || prevPdfState.probedFor === key) return;
+    prevPdfState.probedFor = key;
+    const days = await probePrevPdfDays(baseDay, { includeBase: closed });
+    prevPdfState.closed = closed;
     prevPdfState.days = days;
     prevPdfState.loadedFor = "";
     block.hidden = !days.length;
@@ -1859,6 +2478,7 @@
   const poll = Number(cfg.POLL_INTERVAL_MS) || 30000;
   if (poll > 0) {
     window.setInterval(() => loadSnapshot({ silent: true }), poll);
+    window.setInterval(() => loadWind(state.data), WIND_REFRESH_MS);
   }
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) loadSnapshot({ silent: true });

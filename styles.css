@@ -13,6 +13,8 @@
   --gold-b: rgba(176, 118, 0, 0.75);
   --obstacle: #c9c9c9;
   --obstacle-b: rgba(0, 0, 0, 0.32);
+  --holmes-low: #e8e8e8;
+  --holmes-low-b: rgba(0, 0, 0, 0.18);
   --accent: #0b3d2e;
   --pad: clamp(0.75rem, 3.5vw, 1.25rem);
   --touch: 44px;
@@ -237,6 +239,41 @@ body.is-day-closed .site-sidebar button:not([aria-disabled="true"]) {
   border-radius: 4px;
   padding: 0.15rem 0.35rem;
 }
+/* 障害のお知らせ（障害があった日だけ。平常時は hidden） */
+.incident-notice {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgba(178, 58, 30, 0.45);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: rgba(178, 58, 30, 0.07);
+  color: var(--ink);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  text-align: left;
+}
+.incident-notice[hidden] {
+  display: none;
+}
+.incident-notice-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #b23a1e;
+}
+.incident-notice-item + .incident-notice-item {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed rgba(178, 58, 30, 0.35);
+}
+.incident-notice-head {
+  margin: 0;
+  font-weight: 700;
+}
+.incident-notice-body {
+  margin: 0.1rem 0 0;
+  white-space: pre-line;
+}
 .update-note {
   margin: 0.4rem 0 0;
   color: var(--muted);
@@ -284,6 +321,44 @@ body.is-day-closed .site-sidebar button:not([aria-disabled="true"]) {
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
   font-size: 1rem;
   line-height: 1;
+}
+/* 最後の直線の風（アメダス最寄り観測点・目安）。馬場の後ろに小さな図＋風速。
+   図は中継画面と同じ向き（上の横線が内ラチ、右回りは右→左・左回りは左→右へ走る）、矢印は風が吹いていく向き */
+.track-cond-wind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.12rem;
+  padding: 0.02rem 0.3rem 0.02rem 0.18rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: #555;
+  background: rgba(0, 0, 0, 0.06);
+}
+.track-cond-wind svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+}
+.track-cond-wind--head { color: #b23a1e; background: rgba(178, 58, 30, 0.1); }
+.track-cond-wind--tail { color: #1f6a3a; background: rgba(31, 106, 58, 0.1); }
+.track-cond-wind-speed { color: var(--ink); }
+.track-cond-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.track-cond-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.track-cond-wind-at {
+  font-weight: 400;
+  font-size: 0.7rem;
+  white-space: nowrap;
 }
 .track-cond-surface {
   display: inline-flex;
@@ -1102,6 +1177,11 @@ table.matrix tr.selected td { background: rgba(11, 61, 46, 0.09); }
   background: var(--obstacle);
   border-color: var(--obstacle-b);
 }
+/* ホームズ指数60未満（非推奨）。順位色より後ろに置き、障害より薄い灰色にする。 */
+.jump.is-holmes-low {
+  background: var(--holmes-low);
+  border-color: var(--holmes-low-b);
+}
 
 /* 発走表モード: 会場列 × 発走時刻行（バレー得点推移表イメージ） */
 .jump-timeline {
@@ -1337,6 +1417,7 @@ html.hide-cast-icons .holmes-recommend-icon {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+.race-result-table .rr-waku { width: 1.6rem; font-weight: 600; }
 .race-result-table .rr-name { overflow-wrap: anywhere; }
 .race-result-table .rr-marks { font-size: 0.82rem; }
 .race-result-table .rr-marks span { white-space: nowrap; }
@@ -1349,8 +1430,13 @@ html.hide-cast-icons .holmes-recommend-icon {
   font-size: 0.76rem;
   color: var(--muted);
 }
+.race-result-table .rr-jockey {
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
 @media (max-width: 480px) {
-  .race-result-table .rr-margin { display: none; }
+  .race-result-table .rr-margin,
+  .race-result-table .rr-jockey { display: none; }
   .race-result-table .rr-margin-inline { display: block; }
 }
 .race-payout-table {
@@ -1391,12 +1477,30 @@ html.hide-cast-icons .holmes-recommend-icon {
   font-size: 0.8rem;
   color: var(--muted);
 }
+/* 払戻金はテレビ中継と同じく公式の券種順で左の列→右の列（2026-10-17） */
+.race-payout-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 1.2rem;
+  max-width: 52rem;
+  margin-top: 0.6rem;
+  align-items: start;
+}
+.race-payout-split .race-payout-table {
+  max-width: none;
+  margin-top: 0;
+}
+@media (max-width: 640px) {
+  .race-payout-split { grid-template-columns: minmax(0, 1fr); }
+  .race-payout-split .race-payout-table + .race-payout-table thead { display: none; }
+}
 .race-result-table .mark-honmei { font-weight: 700; }
 .race-result-table .mark-w { color: #d32f2f; }
 .race-result-table .mark-i { color: #1565c0; }
 .race-result-table .mark-h { color: #16a085; }
 .race-result-table .mark-m { color: #7b1fa2; }
 .race-result-table .mark-b { color: #b8860b; }
+.race-result-table .mark-wg { color: #8e2c3a; }
 .pdf-links {
   margin-top: 0.85rem;
   display: flex;
@@ -1420,6 +1524,11 @@ html.hide-cast-icons .holmes-recommend-icon {
 }
 #shutubaCard .acc-body > .shutuba-toolbar {
   margin-top: 0.15rem;
+}
+.shutuba-race-title {
+  margin: 8px 0 0.35rem;
+  font-size: 1rem;
+  color: var(--accent);
 }
 .shutuba-toolbar {
   display: flex;
@@ -1549,6 +1658,7 @@ table.shutuba .mark-i { color: #1565c0; }
 table.shutuba .mark-h { color: #16a085; }
 table.shutuba .mark-m { color: #7b1fa2; }
 table.shutuba .mark-b { color: #b8860b; }
+table.shutuba .mark-wg { color: #8e2c3a; }
 /* 脚質（漢字1文字）。色分けは視覚的に違和感があるため付けない（2026-09-27） */
 table.shutuba td.rs-cell { text-align: center; }
 /* ホームズ指数の朝一斉比。良し悪しを示さないよう色は付けず、控えめに出す */
@@ -1626,6 +1736,9 @@ table.shutuba td.rs-cell { text-align: center; }
      鹿子・天候の行は flex なので justify-content の既定（flex-start）が勝ち、
      周りだけ中央寄せなのにここだけ左に寄って見える。 */
   .track-cond-item {
+    justify-content: center;
+  }
+  .track-cond-title {
     justify-content: center;
   }
   .sidebar-jumps {
@@ -1838,3 +1951,117 @@ table.shutuba td.rs-cell { text-align: center; }
   font-weight: 700;
   text-decoration: underline;
 }
+
+/* 馬名に重ねる前走・前々走（app.js prevRun*、2026-10-18）。
+   馬番をボタンにしてあるが、見た目はただの数字のまま（点線はユーザー指示で外した） */
+.prev-run-trigger {
+  all: unset;
+  cursor: pointer;
+}
+.prev-run-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.prev-run-pop {
+  position: absolute;
+  z-index: 60;
+  width: max-content;
+  max-width: min(24rem, calc(100vw - 16px));
+  padding: 0.6rem 0.75rem;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.prev-run-pop[hidden] {
+  display: none;
+}
+.prev-run-head {
+  margin: 0 0 0.3rem;
+  font-weight: 700;
+}
+.prev-run-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.prev-run-list li {
+  /* 折り返しても2行目以降がラベルの右でそろうように、ラベル列と本文列に分ける */
+  display: grid;
+  grid-template-columns: 3.4em 1fr;
+}
+.prev-run-list li + li {
+  margin-top: 0.35rem;
+}
+.prev-run-label {
+  font-weight: 700;
+  color: var(--accent);
+}
+.prev-run-result {
+  grid-column: 2;
+}
+.prev-run-notes {
+  margin: 0.45rem 0 0;
+  padding-top: 0.35rem;
+  border-top: 1px dashed rgba(0, 0, 0, 0.2);
+}
+
+/* 直前予想が済んだかの表示（app.js preRaceBandHtml、2026-10-18）。
+   ジャンプボタンの下線は 2026-10-19 に廃止（ユーザー決定）。状態はレース要約の帯で示す。
+   帯は色に加えて印の形と見出しの言葉でも区別できるようにしてある */
+.prerace-band {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  margin: 0.4rem 0 0.6rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid;
+}
+.prerace-band-icon {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-top: 0.05rem;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 62%;
+}
+.prerace-band-text {
+  min-width: 0;
+}
+.prerace-band-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.prerace-band-meta {
+  font-weight: 400;
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+.prerace-band-sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.prerace-band--pre_race { background: #e3efe6; border-color: #7fae8c; }
+.prerace-band--pre_race .prerace-band-title { color: #0b3d2e; }
+.prerace-band--pre_race .prerace-band-icon { background-color: #0b3d2e; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23fffcf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2 5 8.6 9.6 3.6'/%3E%3C/svg%3E"); }
+.prerace-band--morning { background: #f6ecd6; border-color: #c9a35a; }
+.prerace-band--morning .prerace-band-title { color: #6b4500; }
+.prerace-band--morning .prerace-band-icon { background-color: #fffcf5; border: 2px solid #8a5a00; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='%238a5a00' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M7 3.5V7l2.4 1.6'/%3E%3C/svg%3E"); }
+.prerace-band--weather { background: #e2eaf4; border-color: #7895bd; }
+.prerace-band--weather .prerace-band-title { color: #23466f; }
+.prerace-band--weather .prerace-band-icon { background-color: #23466f; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fffcf5' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.6 10.4h6.6a2.4 2.4 0 0 0 .2-4.8 3.4 3.4 0 0 0-6.5.9 2 2 0 0 0-.3 3.9z'/%3E%3Cpath d='M6 12.4l-.5 1.2M9 12.4l-.5 1.2'/%3E%3C/svg%3E"); }
+.prerace-band--graded_1h { background: #ece5f2; border-color: #9a82b6; }
+.prerace-band--graded_1h .prerace-band-title { color: #4d3570; }
+.prerace-band--graded_1h .prerace-band-icon { background-color: #4d3570; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fffcf5' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 3h6v3a3 3 0 0 1-6 0V3z'/%3E%3Cpath d='M5 4.2H3.4a1.8 1.8 0 0 0 1.9 2.4M11 4.2h1.6a1.8 1.8 0 0 1-1.9 2.4'/%3E%3Cpath d='M8 9v2.4M5.8 13h4.4'/%3E%3C/svg%3E"); }
+.prerace-band--missed { background: #efeae2; border-color: #a39a8a; }
+.prerace-band--missed .prerace-band-title { color: #333; }
+.prerace-band--missed .prerace-band-icon { background-color: #5c5c5c; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='%23fffcf5' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M7 3.5v4.2'/%3E%3Cpath d='M7 10.3v.2'/%3E%3C/svg%3E"); }

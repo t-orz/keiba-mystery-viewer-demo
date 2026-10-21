@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=20261013070034" />
+  <link rel="stylesheet" href="styles.css?v=20261021095824" />
 </head>
 <body>
   <div class="layout">
@@ -21,10 +21,12 @@
       <p class="responsible-gaming">馬券は自己責任で。無理な買い方はやめましょう</p>
       <p class="tagline">本日の予想サマリー（閲覧専用）</p>
       <p class="updated" id="updatedAt">更新を読み込み中…</p>
+      <section class="incident-notice" id="incidentNotice" role="alert" hidden></section>
       <p class="update-note">※数値、予想印は更新ごとに変動する場合があります。レース直前予想通知機能もご活用されるなど、最新の更新情報を参照してください</p>
       <section class="track-cond" id="trackCond" aria-labelledby="trackCondTitle" hidden>
-        <h2 class="track-cond-title" id="trackCondTitle">【最新の天候・馬場状況】</h2>
+        <h2 class="track-cond-title" id="trackCondTitle"><span>【天候・馬場・直線風向 m/s】</span><span class="track-cond-wind-at" id="trackCondWindAt" hidden></span></h2>
         <ul class="track-cond-list" id="trackCondList"></ul>
+        <p class="track-cond-note">※風向きはアメダス観測データから推測したスタンド視点（テレビ中継視点）での目安データです</p>
       </section>
       <p class="nav-links">
         <a href="help.html" target="_blank" rel="noopener noreferrer">項目説明ヘルプ</a>
@@ -36,7 +38,7 @@
           <button type="button" class="jump-layout-btn" data-jump-layout="timeline" aria-pressed="false">発走表</button>
         </div>
         <div id="venueTabsSidebar" class="tabs sidebar-venue-tabs" role="tablist" aria-label="会場"></div>
-        <p class="hint jump-legend sidebar-jump-legend">金=ホームズ指数1位 / 青=2〜5位 / 緑=6〜10位 / 灰=障害 / 赤枠=最終更新に最も近い発走前</p>
+        <p class="hint jump-legend sidebar-jump-legend">金=ホームズ指数1位 / 青=2〜5位 / 緑=6〜10位 / 灰=障害 / 薄灰=ホームズ指数60未満（非推奨） / 赤枠=最終更新に最も近い発走前</p>
         <div id="jumpButtonsSidebar" class="jump-row sidebar-jump-row"></div>
       </section>
       <section class="sidebar-subscribe" aria-labelledby="subscribeTitle">
@@ -86,7 +88,7 @@
               <li>ワトソンが不人気の馬を本命にしたときは良く感じる</li>
               <li>よくわからなかったらとりあえずアイリーンの◎ー〇▲（☆）を狙ってください。ワイドでいいです。買う基準は1通りが最低15倍くらいです。合成で5～10倍ぐらいが目安です。倍率が物足りなかったら馬連にするか見送ってください。もちろん自己責任で</li>
               <li>最近の川田はすごい来なくなったわけじゃないけど、配当の割には来てない感はやはりあると思います</li>
-              <li>現状のホームズ指数や期待値偏差でレースの取捨を計るのはどうやら難しい模様。修正や新しい方法を模索しつつ、とりあえずここら辺はいったん無視して印のみを判断材料に買うレースは自身で判断する形を推奨します。</li>
+              <li>データ蓄積もそこそこ増えたので改めてホームズ指数を再検証したところ、60未満は明確に悪く、60台も微妙な結果、70以上の領域内では明確な差は判断できないが現状では悪くない部類になるので現状では買うなら指数70以上のレースに絞って検討すべきというのが現状良いかと思っています（70未満のレースは全体の6割弱）</li>
               <li>土曜より日曜の方が自信ありニキ</li>
             </ul>
             <p class="sidebar-dev-notes-def">不人気→2桁人気もしくはそれに近い馬</p>
@@ -164,7 +166,7 @@
             </p>
             <p class="logic-blurb" data-cast="moriarty">
               <img class="logic-cast-icon" src="assets/cast/moriarty.png" alt="" width="48" height="48" decoding="async" />
-              <span class="logic-blurb-body"><strong>モーリアティ</strong> … 重賞特化。重賞だけで本命線／均衡線／波乱線のシナリオを立て、どの展開想定を本線にするかを決めて推奨買い目へ落とす。</span>
+              <span class="logic-blurb-body"><strong>モーリアティ</strong> … 重賞特化。重賞だけを対象に、騎手の影響を加えて印を付ける。</span>
             </p>
             <p class="logic-blurb" data-cast="hunter">
               <img class="logic-cast-icon" src="assets/cast/hunter.png" alt="" width="48" height="48" decoding="async" />
@@ -177,6 +179,10 @@
             <p class="logic-blurb" data-cast="baker">
               <img class="logic-cast-icon" src="assets/cast/baker.png" alt="" width="48" height="48" decoding="async" />
               <span class="logic-blurb-body"><strong>ベイカー</strong> … 都市部主要場特化。東京・中山・阪神・京都・中京（非重賞・新馬以外）向けに、競馬場ごとの専用モデルで印を付ける第3探偵。モーリアティ／ハンター／ホプキンスが付かないレースの担当。</span>
+            </p>
+            <p class="logic-blurb" data-cast="wiggins">
+              <img class="logic-cast-icon" src="assets/cast/wiggins.png" alt="" width="48" height="48" decoding="async" onerror="this.remove()" />
+              <span class="logic-blurb-body"><strong>ウィギンズ</strong> … ローカル特化（試験運用）。福島・新潟・小倉の6〜9月以外（非重賞・新馬以外）向けに、ベイカーと同じ競馬場ごとの専用モデルで印を付ける。ハンターがいない時期のローカル開催の担当。</span>
             </p>
           </div>
           <p class="hint">マトリクスの「ホームズ推」＝ホームズによる推奨ロジック。詳細は <a href="help.html" target="_blank" rel="noopener noreferrer">ヘルプ</a>。</p>
@@ -208,7 +214,7 @@
                 <button type="button" class="jump-layout-btn active" data-jump-layout="venue" aria-pressed="true">場内</button>
                 <button type="button" class="jump-layout-btn" data-jump-layout="timeline" aria-pressed="false">発走表</button>
               </div>
-              <p class="hint jump-legend">ジャンプ色: 金=ホームズ指数1位 / 青=2〜5位 / 緑=6〜10位 / 灰=障害 / 赤枠=最終更新に最も近い発走前</p>
+              <p class="hint jump-legend">ジャンプ色: 金=ホームズ指数1位 / 青=2〜5位 / 緑=6〜10位 / 灰=障害 / 薄灰=ホームズ指数60未満（非推奨） / 赤枠=最終更新に最も近い発走前</p>
               <div id="jumpButtons" class="jump-row"></div>
             </div>
           </div>
@@ -258,6 +264,7 @@
           <span class="acc-chevron" aria-hidden="true"></span>
         </button>
         <div class="acc-body">
+          <h4 class="shutuba-race-title" id="shutubaRaceTitle" hidden></h4>
           <div class="shutuba-toolbar" role="group" aria-label="出馬表の並び替え">
             <span class="shutuba-sort-label">並び</span>
             <button type="button" class="shutuba-sort-btn active" data-shutuba-sort="default" aria-pressed="true">期待率順</button>
@@ -278,13 +285,13 @@
     </div>
   </div>
 
-  <script src="config.js?v=20261013070034"></script>
+  <script src="config.js?v=20261021095824"></script>
   <script>
     (function () {
       var hide = (window.PUBLIC_VIEWER_CONFIG || {}).SHOW_CAST_ICONS === false;
       document.documentElement.classList.toggle("hide-cast-icons", hide);
     })();
   </script>
-  <script src="app.js?v=20261013070034"></script>
+  <script src="app.js?v=20261021095824"></script>
 </body>
 </html>
