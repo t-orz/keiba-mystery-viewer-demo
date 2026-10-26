@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=20261021095824" />
+  <link rel="stylesheet" href="styles.css?v=20261027005207" />
 </head>
 <body>
   <div class="layout">
@@ -20,17 +20,25 @@
       </div>
       <p class="responsible-gaming">馬券は自己責任で。無理な買い方はやめましょう</p>
       <p class="tagline">本日の予想サマリー（閲覧専用）</p>
+      <!-- ヘルプは欄の上（サイトの説明）にまとめ、更新日時から下は今の情報だけにする（2026-10-26） -->
+      <p class="nav-links nav-links-top">
+        <a href="help.html" target="_blank" rel="noopener noreferrer">項目説明ヘルプ</a>
+      </p>
       <p class="updated" id="updatedAt">更新を読み込み中…</p>
       <section class="incident-notice" id="incidentNotice" role="alert" hidden></section>
-      <p class="update-note">※数値、予想印は更新ごとに変動する場合があります。レース直前予想通知機能もご活用されるなど、最新の更新情報を参照してください</p>
+      <p class="update-note">※数値・印は更新ごとに変わります</p>
       <section class="track-cond" id="trackCond" aria-labelledby="trackCondTitle" hidden>
         <h2 class="track-cond-title" id="trackCondTitle"><span>【天候・馬場・直線風向 m/s】</span><span class="track-cond-wind-at" id="trackCondWindAt" hidden></span></h2>
         <ul class="track-cond-list" id="trackCondList"></ul>
-        <p class="track-cond-note">※風向きはアメダス観測データから推測したスタンド視点（テレビ中継視点）での目安データです</p>
+        <p class="track-cond-note">※風向きはアメダスからの目安（スタンド視点）</p>
       </section>
-      <p class="nav-links">
-        <a href="help.html" target="_blank" rel="noopener noreferrer">項目説明ヘルプ</a>
-      </p>
+      <!-- 締切が最も近いレースのホームズ指数（PC表示のみ・押すとそのレースへ。2026-10-26。中身は app.js renderNextRaceBox） -->
+      <div class="next-race-wrap" id="nextRaceWrap" hidden>
+        <p class="next-race-lead"><strong>ホームズ指数速報</strong><span>締切が最も近いレース（押すと予想へ）</span></p>
+        <button type="button" class="next-race" id="nextRace"></button>
+      </div>
+      <!-- 追跡ページ（別窓で開きっぱなしにする前提）。欄を閉じても消えないよう左の欄に置く（2026-10-24 案A） -->
+      <p class="tracker-link"><a class="tracker-btn" href="tracker.html" target="holmesTracker" rel="noopener">全レースのホームズ指数情報を表示（別窓）</a></p>
       <section class="sidebar-jumps" id="sidebarJumps" aria-labelledby="sidebarJumpsTitle">
         <h2 class="sidebar-jumps-title" id="sidebarJumpsTitle">レースジャンプ</h2>
         <div class="jump-layout-toggle" role="group" aria-label="ジャンプ配列">
@@ -38,12 +46,14 @@
           <button type="button" class="jump-layout-btn" data-jump-layout="timeline" aria-pressed="false">発走表</button>
         </div>
         <div id="venueTabsSidebar" class="tabs sidebar-venue-tabs" role="tablist" aria-label="会場"></div>
-        <p class="hint jump-legend sidebar-jump-legend">金=ホームズ指数1位 / 青=2〜5位 / 緑=6〜10位 / 灰=障害 / 薄灰=ホームズ指数60未満（非推奨） / 赤枠=最終更新に最も近い発走前</p>
+        <p class="hint jump-legend sidebar-jump-legend">金=ホームズ指数1位 / 青=2〜5位 / 緑=6〜10位 / 網掛け=障害 / 灰=ホームズ指数65未満（非推奨） / 赤枠=最終更新に最も近い発走前</p>
         <div id="jumpButtonsSidebar" class="jump-row sidebar-jump-row"></div>
       </section>
       <section class="sidebar-subscribe" aria-labelledby="subscribeTitle">
         <h2 class="sidebar-subscribe-title" id="subscribeTitle">配信を受け取る</h2>
         <p class="sidebar-subscribe-hint">発走直前予想などの通知はこちらから登録できます。</p>
+        <!-- スマホではボタンを最下段へ移し、ここは案内だけ（2026-10-25）。本題（指数上位）までのスクロールを短くする -->
+        <p class="cta-guide mobile-only"><a href="#bottomCta">Discord配信（人数限定）と全レースのホームズ指数情報のボタンは、ページ最下部にあります ↓</a></p>
         <div class="cta-row sidebar-cta">
           <div class="sidebar-discord-wrap">
             <a class="btn btn-discord" id="discordCta" href="#" target="_blank" rel="noopener">Discord配信に参加</a>
@@ -90,6 +100,7 @@
               <li>最近の川田はすごい来なくなったわけじゃないけど、配当の割には来てない感はやはりあると思います</li>
               <li>データ蓄積もそこそこ増えたので改めてホームズ指数を再検証したところ、60未満は明確に悪く、60台も微妙な結果、70以上の領域内では明確な差は判断できないが現状では悪くない部類になるので現状では買うなら指数70以上のレースに絞って検討すべきというのが現状良いかと思っています（70未満のレースは全体の6割弱）</li>
               <li>土曜より日曜の方が自信ありニキ</li>
+              <li>どのようなレースを買えばいいかの仮説として、「直前予想でホームズ指数が70以上かつ当日内順位が5位以上になった時のみ買う（さらに厳選するなら1位のみ買う）」に手ごたえを感じ、検証データを集めています。買い方はみなさんの手腕にお任せします</li>
             </ul>
             <p class="sidebar-dev-notes-def">不人気→2桁人気もしくはそれに近い馬</p>
           </div>
@@ -117,6 +128,97 @@
         <button type="button" class="acc-tool-btn" id="accCloseSecondary">説明を閉じる</button>
       </div>
 
+      <section class="card acc" data-acc="top5" data-default="open">
+        <button type="button" class="acc-toggle" aria-expanded="true">
+          <span class="acc-title">本日のホームズ指数上位</span>
+          <span class="acc-hint">買う候補の入口</span>
+          <span class="acc-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="acc-body">
+          <ol id="top5List" class="top5"></ol>
+          <p id="top5Others" class="top5-others" hidden></p>
+        </div>
+      </section>
+
+      <section class="card acc" data-acc="matrix" data-default="open">
+        <button type="button" class="acc-toggle" aria-expanded="true">
+          <span class="acc-title">会場マトリクス</span>
+          <span class="acc-hint">ホームズ推奨・各印</span>
+          <span class="acc-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="acc-body">
+          <div class="matrix-nav mobile-only" id="matrixNavMobile">
+            <div id="venueTabs" class="tabs" role="tablist" aria-label="会場"></div>
+            <div class="jump-block" id="jumpBlockMain">
+              <div class="jump-layout-toggle" role="group" aria-label="ジャンプ配列">
+                <button type="button" class="jump-layout-btn active" data-jump-layout="venue" aria-pressed="true">場内</button>
+                <button type="button" class="jump-layout-btn" data-jump-layout="timeline" aria-pressed="false">発走表</button>
+              </div>
+              <p class="hint jump-legend">ジャンプ色: 金=ホームズ指数1位 / 青=2〜5位 / 緑=6〜10位 / 網掛け=障害 / 灰=ホームズ指数65未満（非推奨） / 赤枠=最終更新に最も近い発走前</p>
+              <div id="jumpButtons" class="jump-row"></div>
+            </div>
+          </div>
+          <div class="acc acc-nested acc-mobile-only" data-acc="matrix-list" data-default="closed">
+            <button type="button" class="acc-toggle" aria-expanded="false">
+              <span class="acc-title">レース一覧</span>
+              <span class="acc-hint">ホームズ推奨・各印</span>
+              <span class="acc-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="acc-body">
+              <div id="matrixWrap"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card acc" id="raceDetailCard" data-acc="race" data-default="open">
+        <button type="button" class="acc-toggle" aria-expanded="true">
+          <span class="acc-title">レース要約</span>
+          <span class="acc-hint">印・PDF</span>
+          <span class="acc-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="acc-body">
+          <div id="raceDetail" class="race-detail">
+            <p class="hint">マトリクスの行またはジャンプボタンでレースを選ぶと表示されます。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card acc acc-pc" id="raceResultCard" data-acc="result" data-default="closed" hidden>
+        <button type="button" class="acc-toggle" aria-expanded="false">
+          <span class="acc-title">確定結果</span>
+          <span class="acc-hint">着差・印・払戻金</span>
+          <span class="acc-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="acc-body">
+          <div id="raceResult" class="race-result">
+            <p class="hint">レースを選ぶと、確定したレースの結果が表示されます。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card acc acc-pc" id="shutubaCard" data-acc="shutuba" data-default="closed">
+        <button type="button" class="acc-toggle" aria-expanded="false">
+          <span class="acc-title">出馬表</span>
+          <span class="acc-hint">枠・脚質・印</span>
+          <span class="acc-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="acc-body">
+          <h4 class="shutuba-race-title" id="shutubaRaceTitle" hidden></h4>
+          <div class="shutuba-toolbar" role="group" aria-label="出馬表の並び替え">
+            <span class="shutuba-sort-label">並び</span>
+            <button type="button" class="shutuba-sort-btn active" data-shutuba-sort="default" aria-pressed="true">3着内率順</button>
+            <button type="button" class="shutuba-sort-btn" data-shutuba-sort="umaban" aria-pressed="false">馬番順</button>
+            <button type="button" class="shutuba-sort-btn" data-shutuba-sort="ninki" aria-pressed="false">人気順</button>
+          </div>
+          <p class="hint shutuba-sort-hint" id="shutubaSortHint">推定3着内率の高い順</p>
+          <div id="shutubaDetail" class="shutuba-detail">
+            <p class="hint">レースを選ぶと出馬表が表示されます。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- サイトの説明2つは初めての人向けなので、本文の先頭ではなく出馬表の下に置く（2026-10-26） -->
       <section class="card site-overview acc acc-pc" data-acc="overview" data-default="closed">
         <button type="button" class="acc-toggle" aria-expanded="false">
           <span class="acc-title">このサイトの概要</span>
@@ -131,13 +233,13 @@
               予想の作成・編集や馬券購入は行いません。
             </p>
             <p>
-              画面では、当日の優先候補（Top5）、開催場ごとのマトリクス、レース要約、印付き出馬表などを表示します。
-              各探偵（ホームズ／ワトソン／アイリーンほか）の役割や項目の意味は「登場人物の役割説明」と
+              画面では、当日のホームズ指数上位、開催場ごとのマトリクス、レース要約、印付き出馬表などを表示します。
+              各探偵（ホームズ／ワトソン／アイリーンほか）の役割や項目の意味は、下の「登場人物の役割説明」と
               <a href="help.html" target="_blank" rel="noopener noreferrer">項目説明ヘルプ</a>を参照してください。
             </p>
             <p>
               数値や予想印は更新のたびに変わることがあります。主な更新は開催日早朝の一斉反映のほか、
-              重賞の発走前、全レースの発走直前などです。最新は画面上部の更新時刻と通知をご確認ください。
+              重賞の発走前、全レースの発走直前などです。最新は左の欄（スマホでは画面上部）の更新時刻と通知をご確認ください。
             </p>
             <p class="overview-note">馬券は自己責任で。無理な買い方はやめましょう。</p>
           </div>
@@ -185,113 +287,42 @@
               <span class="logic-blurb-body"><strong>ウィギンズ</strong> … ローカル特化（試験運用）。福島・新潟・小倉の6〜9月以外（非重賞・新馬以外）向けに、ベイカーと同じ競馬場ごとの専用モデルで印を付ける。ハンターがいない時期のローカル開催の担当。</span>
             </p>
           </div>
-          <p class="hint">マトリクスの「ホームズ推」＝ホームズによる推奨ロジック。詳細は <a href="help.html" target="_blank" rel="noopener noreferrer">ヘルプ</a>。</p>
+          <p class="hint">マトリクスの「ホームズ推奨」＝ホームズが本線にする探偵ロジック。詳細は <a href="help.html" target="_blank" rel="noopener noreferrer">ヘルプ</a>。</p>
         </div>
       </section>
 
-      <section class="card acc" data-acc="top5" data-default="open">
-        <button type="button" class="acc-toggle" aria-expanded="true">
-          <span class="acc-title">本日の優先候補（Top5）</span>
-          <span class="acc-hint">買う候補の入口</span>
-          <span class="acc-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="acc-body">
-          <ol id="top5List" class="top5"></ol>
-        </div>
-      </section>
-
-      <section class="card acc" data-acc="matrix" data-default="open">
-        <button type="button" class="acc-toggle" aria-expanded="true">
-          <span class="acc-title">会場マトリクス</span>
-          <span class="acc-hint">ホームズ推・各印</span>
-          <span class="acc-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="acc-body">
-          <div class="matrix-nav mobile-only" id="matrixNavMobile">
-            <div id="venueTabs" class="tabs" role="tablist" aria-label="会場"></div>
-            <div class="jump-block" id="jumpBlockMain">
-              <div class="jump-layout-toggle" role="group" aria-label="ジャンプ配列">
-                <button type="button" class="jump-layout-btn active" data-jump-layout="venue" aria-pressed="true">場内</button>
-                <button type="button" class="jump-layout-btn" data-jump-layout="timeline" aria-pressed="false">発走表</button>
-              </div>
-              <p class="hint jump-legend">ジャンプ色: 金=ホームズ指数1位 / 青=2〜5位 / 緑=6〜10位 / 灰=障害 / 薄灰=ホームズ指数60未満（非推奨） / 赤枠=最終更新に最も近い発走前</p>
-              <div id="jumpButtons" class="jump-row"></div>
-            </div>
+      <!-- スマホだけ: 左の欄のボタン一式をここに出す（PCは左の欄のまま）。招待URLは app.js setCtas で同じ値を入れる -->
+      <section class="bottom-cta mobile-only" id="bottomCta" aria-labelledby="bottomCtaTitle">
+        <h2 class="sidebar-subscribe-title" id="bottomCtaTitle">配信を受け取る</h2>
+        <p class="sidebar-subscribe-hint">発走直前予想などの通知はこちらから登録できます。</p>
+        <div class="cta-row sidebar-cta">
+          <div class="sidebar-discord-wrap">
+            <a class="btn btn-discord" id="discordCtaBottom" href="#" target="_blank" rel="noopener">Discord配信に参加</a>
+            <p class="sidebar-limited-note">※人数限定</p>
           </div>
-          <div class="acc acc-nested acc-mobile-only" data-acc="matrix-list" data-default="closed">
-            <button type="button" class="acc-toggle" aria-expanded="false">
-              <span class="acc-title">レース一覧</span>
-              <span class="acc-hint">ホームズ推・各印</span>
-              <span class="acc-chevron" aria-hidden="true"></span>
-            </button>
-            <div class="acc-body">
-              <div id="matrixWrap"></div>
-            </div>
+          <div class="sidebar-discord-wrap">
+            <p class="sidebar-discord-lead">直前予想のその先へ！Discord限定5分前予想（試験運用中）</p>
+            <a class="btn btn-discord btn-discord-dark" id="discordCta5mBottom" href="#" target="_blank" rel="noopener">Discord配信に参加</a>
+            <p class="sidebar-limited-note">※人数限定</p>
           </div>
         </div>
-      </section>
-
-      <section class="card acc" id="raceDetailCard" data-acc="race" data-default="open">
-        <button type="button" class="acc-toggle" aria-expanded="true">
-          <span class="acc-title">レース要約</span>
-          <span class="acc-hint">印・PDF</span>
-          <span class="acc-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="acc-body">
-          <div id="raceDetail" class="race-detail">
-            <p class="hint">マトリクスの行またはジャンプボタンでレースを選ぶと表示されます。</p>
-          </div>
-        </div>
-      </section>
-
-      <section class="card acc acc-pc" id="raceResultCard" data-acc="result" data-default="closed">
-        <button type="button" class="acc-toggle" aria-expanded="false">
-          <span class="acc-title">確定結果</span>
-          <span class="acc-hint">着差・印・払戻金</span>
-          <span class="acc-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="acc-body">
-          <div id="raceResult" class="race-result">
-            <p class="hint">レースを選ぶと、確定したレースの結果が表示されます。</p>
-          </div>
-        </div>
-      </section>
-
-      <section class="card acc acc-pc" id="shutubaCard" data-acc="shutuba" data-default="closed">
-        <button type="button" class="acc-toggle" aria-expanded="false">
-          <span class="acc-title">UI出馬表</span>
-          <span class="acc-hint">枠・脚質・印</span>
-          <span class="acc-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="acc-body">
-          <h4 class="shutuba-race-title" id="shutubaRaceTitle" hidden></h4>
-          <div class="shutuba-toolbar" role="group" aria-label="出馬表の並び替え">
-            <span class="shutuba-sort-label">並び</span>
-            <button type="button" class="shutuba-sort-btn active" data-shutuba-sort="default" aria-pressed="true">期待率順</button>
-            <button type="button" class="shutuba-sort-btn" data-shutuba-sort="umaban" aria-pressed="false">馬番順</button>
-            <button type="button" class="shutuba-sort-btn" data-shutuba-sort="ninki" aria-pressed="false">人気順</button>
-          </div>
-          <p class="hint shutuba-sort-hint" id="shutubaSortHint">推定3着内率の高い順（本体UIと同じ）</p>
-          <div id="shutubaDetail" class="shutuba-detail">
-            <p class="hint">レースを選ぶと出馬表が表示されます。</p>
-          </div>
-        </div>
+        <p class="tracker-link"><a class="tracker-btn" href="tracker.html" target="holmesTracker" rel="noopener">全レースのホームズ指数情報を表示（別窓）</a></p>
       </section>
 
       <footer class="site-footer">
         <p>本ページは閲覧専用です。予想の自動実行やオッズ取得は行いません。</p>
-        <p><a href="help.html" target="_blank" rel="noopener noreferrer">項目説明ヘルプ（印・評価・PDFの見方）</a></p>
       </footer>
     </div>
   </div>
 
-  <script src="config.js?v=20261021095824"></script>
+  <script src="config.js?v=20261027005207"></script>
   <script>
     (function () {
       var hide = (window.PUBLIC_VIEWER_CONFIG || {}).SHOW_CAST_ICONS === false;
       document.documentElement.classList.toggle("hide-cast-icons", hide);
     })();
   </script>
-  <script src="app.js?v=20261021095824"></script>
+  <script src="track_cond.js?v=20261027005207"></script>
+  <script src="app.js?v=20261027005207"></script>
 </body>
 </html>

@@ -11,10 +11,10 @@
   --green-b: rgba(52, 168, 83, 0.55);
   --gold: rgba(240, 163, 10, 0.34);
   --gold-b: rgba(176, 118, 0, 0.75);
-  --obstacle: #c9c9c9;
+  --obstacle-hatch: rgba(0, 0, 0, 0.18);
   --obstacle-b: rgba(0, 0, 0, 0.32);
-  --holmes-low: #e8e8e8;
-  --holmes-low-b: rgba(0, 0, 0, 0.18);
+  --holmes-low: #c9c9c9;
+  --holmes-low-b: rgba(0, 0, 0, 0.32);
   --accent: #0b3d2e;
   --pad: clamp(0.75rem, 3.5vw, 1.25rem);
   --touch: 44px;
@@ -299,16 +299,17 @@ body.is-day-closed .site-sidebar button:not([aria-disabled="true"]) {
   flex-direction: column;
   gap: 0.3rem;
 }
+/* 1場1行。幅224pxで「稍重・稍重・風速12.3」まで収まる間隔（10-24 新潟の稍重で1px溢れて風が2行目に落ちた） */
 .track-cond-item {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 0.28rem 0.42rem;
+  gap: 0.28rem 0.3rem;
   font-size: 0.79rem;
   line-height: 1.3;
 }
 .track-cond-place {
-  min-width: 2.7em;
+  min-width: 2.4em;
   font-weight: 700;
   color: var(--accent);
 }
@@ -537,6 +538,11 @@ body.is-day-closed .site-sidebar button:not([aria-disabled="true"]) {
 .nav-links {
   margin: 0.75rem 0 0;
   font-size: 0.95rem;
+}
+/* 欄の上段（「本日の予想サマリー」の下）に置いたヘルプ。目立たせすぎない */
+.site-sidebar .nav-links.nav-links-top {
+  margin: 0.15rem 0 0.7rem;
+  font-size: 0.88rem;
 }
 
 .sidebar-subscribe {
@@ -976,6 +982,130 @@ body.is-day-closed .btn-discord.btn-discord-dark:not([aria-disabled="true"]):act
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+/* ホームズ指数速報（締切が最も近いレース。PC表示の左の欄、追跡ボタンの真上。2026-10-26 手書き図2枚目）
+   左=指数(朝一斉比)と当日順位/対象レース数、右上=競馬場|レース番号、右下=締切までの秒数。
+   締切90秒前から残り時間の欄だけ、左から1秒ごとに警戒色の赤で塗られていく（順位の金・青・緑と混同しない色、10-27 ユーザー指示）（幅は app.js が --nr-fill で渡す） */
+.next-race {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.25fr 0.85fr 0.5fr;
+  grid-template-areas:
+    "main place race"
+    "main secs secs";
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--card);
+  color: inherit;
+  font-family: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.next-race-wrap { margin: 0.5rem 0 0; }
+.next-race-wrap[hidden] { display: none; }
+/* 小窓の説明は窓の外、上段の1行で（2026-10-26 ユーザー指示） */
+.next-race-lead {
+  margin: 0 0 0.2rem;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.next-race-lead strong { display: block; font-size: 0.95rem; }
+.next-race-lead span { display: block; color: var(--muted); font-weight: 600; }
+.next-race:hover,
+.next-race:focus-visible { filter: brightness(0.97); }
+.next-race .nr-main {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.35rem 0.2rem;
+  border-right: 1px solid rgba(11, 61, 46, 0.35);
+}
+.next-race .nr-idx { font-size: 2.1rem; font-weight: 800; line-height: 1.05; }
+.next-race .nr-delta { margin-left: 0.15em; font-size: 0.95rem; font-weight: 700; }
+.next-race .nr-rank { margin-top: 0.15rem; font-size: 0.95rem; font-weight: 700; }
+.next-race .nr-rank small { font-size: 0.8em; font-weight: 600; }
+.next-race .nr-place,
+.next-race .nr-race {
+  padding: 0.3rem 0.1rem;
+  border-bottom: 1px solid rgba(11, 61, 46, 0.35);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.next-race .nr-place { grid-area: place; border-right: 1px solid rgba(11, 61, 46, 0.35); }
+.next-race .nr-race { grid-area: race; }
+.next-race .nr-secs {
+  grid-area: secs;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.25em;
+  padding: 0.25rem 0.1rem;
+  font-size: 1.55rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.next-race .nr-secs small { font-size: 0.75rem; font-weight: 700; }
+/* 塗りは残り時間の欄に限る（2026-10-26 ユーザー指示）。文字の下に敷く */
+.next-race .nr-secs { position: relative; isolation: isolate; }
+.next-race .nr-secs::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: -1;
+  width: var(--nr-fill, 0%);
+  background: rgba(229, 57, 53, 0.34);
+  pointer-events: none;
+}
+.next-race .nr-secs.soon { color: #8e0000; }
+/* 色は追跡ページ・レースジャンプと同じ（1位=金・2〜5位=青・6〜10位=緑・非推奨=灰） */
+.next-race.rank-top .nr-main { background: var(--gold); }
+.next-race.rank-hi .nr-main { background: var(--blue); }
+.next-race.rank-mid .nr-main { background: var(--green); }
+.next-race.is-low .nr-main { color: #8a8a8a; }
+@media (max-width: 720px) {
+  .next-race-wrap { display: none !important; }
+}
+/* 追跡ページ（tracker.html）を別窓で開くボタン */
+.tracker-link {
+  margin: 0.5rem 0 0.9rem;
+}
+.tracker-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch);
+  padding: 0.45rem 1.1rem;
+  border-radius: 10px;
+  /* 閲覧サイトでほかに使っていない深い青緑（白文字とのコントラスト比 約6:1） */
+  background: #00707e;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
+}
+.tracker-btn:hover,
+.tracker-btn:focus-visible {
+  filter: brightness(1.15);
+}
+/* 左の欄では欄の幅いっぱいに置く */
+.tracker-link .tracker-btn { display: flex; width: 100%; text-align: center; }
+/* 6位以下でホームズ指数70以上（「その他：京都3R・72　／　東京9R・71」） */
+.top5-others {
+  margin: 0.35rem 0 0;
+  font-size: 0.92em;
+  line-height: 2;
+}
+.top5-others a {
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
 
 .tabs {
   display: flex;
@@ -1171,13 +1301,16 @@ table.matrix tr.selected td { background: rgba(11, 61, 46, 0.09); }
   margin-left: 0.5em;
 }
 
-/* 障害競走はホームズ指数の対象外（参考予想）。順位色を付けず薄い灰色で示す。
+/* 障害競走はホームズ指数の対象外（参考予想）。順位色を付けず斜めの網掛けで示す
+   （2026-10-24 灰から変更。灰は非推奨（10-31〜65未満）に回した）。
    rank-* と同じ詳細度なので、必ずこの順（後ろ）に置く。 */
 .jump.is-obstacle {
-  background: var(--obstacle);
+  background:
+    repeating-linear-gradient(135deg, var(--obstacle-hatch) 0 2px, transparent 2px 6px),
+    var(--card);
   border-color: var(--obstacle-b);
 }
-/* ホームズ指数60未満（非推奨）。順位色より後ろに置き、障害より薄い灰色にする。 */
+/* ホームズ指数65未満（非推奨、10-31〜。それまでは60未満）。順位色より後ろに置く。色は以前の障害の灰。 */
 .jump.is-holmes-low {
   background: var(--holmes-low);
   border-color: var(--holmes-low-b);
@@ -1369,6 +1502,8 @@ html.hide-cast-icons .holmes-recommend-icon {
   overflow-wrap: anywhere;
 }
 .mark-box strong { display: block; margin-bottom: 0.2rem; color: var(--accent); }
+/* 確定結果は確定するまで見出しごと出さない（2026-10-26） */
+#raceResultCard[hidden] { display: none !important; }
 /* 確定結果（2026-10-12）。詳細は独立した「確定結果」ブロック（既定は閉じる）、
    レース要約には着順と馬番だけの1行を添える */
 .race-result-brief {
@@ -1743,6 +1878,32 @@ table.shutuba td.rs-cell { text-align: center; }
   }
   .sidebar-jumps {
     display: none !important;
+  }
+  /* スマホは Discord・追跡ボタンを最下段（#bottomCta）へ。左の欄（上）には案内文だけ残す（2026-10-25） */
+  .site-sidebar .sidebar-cta,
+  .site-sidebar .tracker-link,
+  .site-sidebar .sidebar-subscribe-hint {
+    display: none !important;
+  }
+  .cta-guide.mobile-only {
+    display: block;
+    margin: 0.2rem 0 0.6rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    line-height: 1.5;
+  }
+  .bottom-cta.mobile-only {
+    display: block;
+    margin: 1.2rem 0 0.5rem;
+    padding: 0.9rem 0.85rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.12);
+    text-align: center;
+  }
+  .bottom-cta .sidebar-cta {
+    display: flex;
+  }
+  .bottom-cta .tracker-link {
+    margin-top: 0.9rem;
   }
   .matrix-nav.mobile-only {
     display: block;

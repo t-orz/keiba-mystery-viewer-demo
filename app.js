@@ -47,7 +47,7 @@
           ? "馬番の小さい順"
           : mode === "ninki"
           ? "人気の高い順（単勝オッズが低い順）"
-          : "推定3着内率の高い順（本体UIと同じ）";
+          : "推定3着内率の高い順";
     }
   }
 
@@ -75,6 +75,9 @@
     setDiscordCta(disc, cfg.DISCORD_INVITE_URL, "DISCORD_INVITE_URL");
     // 超直前予想（Discord通知限定）の参加ボタン（2026-10-13）
     setDiscordCta($("discordCta5m"), cfg.DISCORD_5M_INVITE_URL, "DISCORD_5M_INVITE_URL");
+    // スマホ用に最下段へ出している同じボタン（2026-10-25）
+    setDiscordCta($("discordCtaBottom"), cfg.DISCORD_INVITE_URL, "DISCORD_INVITE_URL");
+    setDiscordCta($("discordCta5mBottom"), cfg.DISCORD_5M_INVITE_URL, "DISCORD_5M_INVITE_URL");
   }
 
   function setDiscordCta(el, url, key) {
@@ -109,6 +112,11 @@
     return null;
   }
 
+  /** マトリクスの指数欄。「57（21位/35レース中）」の「/35レース中」は全行同じなので見出しに寄せて省く（2026-10-26） */
+  function matrixHolmesText(row) {
+    return formatHolmesIndexDisplay(row).replace(/[（(](\d+位)\/\d+レース中[）)]/, "（$1）");
+  }
+
   function formatHolmesIndexDisplay(r) {
     if (!r) return "-";
     if (typeof r.holmes_index_display === "string" && r.holmes_index_display.trim()) {
@@ -139,7 +147,7 @@
       const li = document.createElement("li");
       const a = document.createElement("a");
       a.href = "#raceDetailCard";
-      a.textContent = it.line || `${it.place} ${it.R}R`;
+      a.textContent = top5LineText(it);
       const idxDisp = formatHolmesIndexDisplay(it);
       if (idxDisp && idxDisp !== "-") a.title = `ホームズ指数 ${idxDisp}`;
       a.addEventListener("click", (e) => {
@@ -149,6 +157,52 @@
       li.appendChild(a);
       ol.appendChild(li);
     }
+    renderTop5Others(items);
+  }
+
+  /** 上位欄の1行。探偵名の（）注釈はこの欄では出さない（2026-10-25 ユーザー指示）。
+   *  line は「東京 5R / ホプキンス（新馬戦特化） / ホームズ指数 86（1位/23レース中）」の形で、
+   *  2つ目の区切りが探偵名。順位は行の番号と同じなので「指数86」だけにする（2026-10-26）。 */
+  function top5LineText(it) {
+    if (!it.line) return `${it.place} ${it.R}R`;
+    const parts = String(it.line).split(" / ");
+    if (parts.length >= 2) parts[1] = parts[1].replace(/\s*[（(][^）)]*[）)]\s*$/, "");
+    return parts
+      .map((x) => x.replace(/^ホームズ指数\s*(\d+(?:\.\d+)?)\s*[（(]\d+位\/\d+レース中[）)]$/, "指数$1"))
+      .join(" / ");
+  }
+
+  /** Top5 の外（6位以下）でホームズ指数が HOLMES_BORDER_TOP 以上のレースを
+   *  「その他：京都3R・72　／　東京9R・71」の1行で出す（2026-10-24 ユーザー決定で解禁）。 */
+  function renderTop5Others(top5Items) {
+    const p = $("top5Others");
+    if (!p) return;
+    p.innerHTML = "";
+    const inTop5 = new Set((top5Items || []).map((it) => String(it.race_id)));
+    const rows = allRaces()
+      .filter((r) => {
+        const v = holmesIndexValue(r);
+        const rank = Number(r.holmes_index_rank);
+        return v != null && v >= HOLMES_BORDER_TOP && Number.isFinite(rank) && rank >= 6
+          && !inTop5.has(String(r.race_id));
+      })
+      .sort((a, b) => Number(a.holmes_index_rank) - Number(b.holmes_index_rank));
+    p.hidden = !rows.length;
+    if (!rows.length) return;
+    p.appendChild(document.createTextNode("その他："));
+    rows.forEach((r, i) => {
+      if (i) p.appendChild(document.createTextNode("　／　"));
+      const rn = String(r.R || "").replace(/[Rr]$/, "") || "-";
+      const a = document.createElement("a");
+      a.href = "#raceDetailCard";
+      a.textContent = `${r.place || ""}${rn}R・${holmesIndexValue(r)}`;
+      a.title = `ホームズ指数 ${holmesIndexValue(r)}（${r.holmes_index_rank}位）`;
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        selectRace(r.race_id, r.place);
+      });
+      p.appendChild(a);
+    });
   }
 
   function allRaces() {
@@ -318,8 +372,8 @@
     const labels = {
       race: "Race",
       dev: "偏差",
-      sui: "ホームズ推",
-      holmes_index: "ホームズ指数",
+      sui: "ホームズ推奨",
+      holmes_index: "ホームズ指数（当日順位）",
       ワトソン: "ワトソン",
       アイリーン: "アイリーン",
       第3探偵: "第3探偵",
@@ -341,7 +395,7 @@
         else if (c === "ワトソン") val = watson;
         else if (c === "アイリーン") val = irene;
         else if (c === "sui") val = sui;
-        else if (c === "holmes_index") val = formatHolmesIndexDisplay(row);
+        else if (c === "holmes_index") val = matrixHolmesText(row);
         else val = row[c] ?? "-";
         table += `<td>${escapeHtml(val)}</td>`;
       }
@@ -351,8 +405,8 @@
           <p class="matrix-card-title">${escapeHtml(row.race || "-")}</p>
           <div class="matrix-card-grid">
             <div><span>偏差</span><strong>${escapeHtml(row.dev ?? "-")}</strong></div>
-            <div><span>ホームズ推</span><strong>${escapeHtml(sui)}</strong></div>
-            <div class="matrix-card-full"><span>ホームズ指数</span><strong>${escapeHtml(formatHolmesIndexDisplay(row))}</strong></div>
+            <div><span>ホームズ推奨</span><strong>${escapeHtml(sui)}</strong></div>
+            <div class="matrix-card-full"><span>ホームズ指数（当日順位）</span><strong>${escapeHtml(matrixHolmesText(row))}</strong></div>
             <div><span>ワトソン</span><strong>${escapeHtml(watson)}</strong></div>
             <div><span>アイリーン</span><strong>${escapeHtml(irene)}</strong></div>
             <div class="matrix-card-full"><span>第3探偵</span><strong>${escapeHtml(third)}</strong></div>
@@ -378,7 +432,8 @@
   // この値未満のレースは「非推奨」。順位が上位でも順位色を付けない（2026-10-24 の新しい計算から）。
   // HOLMES_LOW_THRESHOLD 以上 HOLMES_BORDER_TOP 未満は「境界域」で、色は変えず要約に説明を添える。
   // 線は race_edge_board.py の HOLMES_LOW_LINE / HOLMES_BORDER_LINE と同じ値にすること。
-  const HOLMES_LOW_THRESHOLD = 60;
+  // 2026-10-31〜 60 → 65（案①: 65未満=非推奨・65〜69=境界域）。物差し直しで指数が約5上がったため。
+  const HOLMES_LOW_THRESHOLD = 65;
   const HOLMES_BORDER_TOP = 70;
   const HOLMES_BORDER_NOTE = "境界域：やや信頼しにくい";
   const HOLMES_LOW_NOTE = "非推奨";
@@ -874,19 +929,21 @@
       <p class="meta">${formatHolmesRecommendHtml(r)}</p>
       <div class="marks">
     `;
-    // 第3探偵の箱はハンター/ホプキンス → ベイカー → ウィギンズの順に、登場しているものを出す（設計上は排他）。
-    const pickSpecialist = (src) => {
-      for (const k of ["ハ/ホプ", "ベ", "ウ"]) {
-        if (src[k] && src[k] !== "-") return src[k];
-      }
-      return "-";
-    };
-    const specialistCell = pickSpecialist(cells);
-    const specialistMark = pickSpecialist(marks);
-    for (const [k, label] of [["ワ", "ワトソン"], ["アイ", "アイリーン"], ["モ", "モーリアティ"]]) {
-      html += `<div class="mark-box"><strong>${label}</strong>${escapeHtml(cells[k] || "-")}<br/><span>${escapeHtml(marks[k] || "-")}</span></div>`;
+    // 箱はワトソン・アイリーンと、そのレースを担当する第3探偵（モーリアティ／ハンター・ホプキンス／ベイカー／
+    // ウィギンズ。設計上は排他。障害はグレゴリー）の1つだけ。担当していない探偵の空の箱は出さない（2026-10-26）。
+    // 第3探偵の評価欄は探偵名そのもの（例 cells.ベ="ベイカー"）なので、見出しと重なるときは評価の行を省く
+    const blank = (x) => !x || x === "-";
+    const boxes = [["ワ", "ワトソン"], ["アイ", "アイリーン"]];
+    for (const [k, label] of [["モ", "モーリアティ"], ["ハ/ホプ", "ハンター/ホプキンス"], ["ベ", "ベイカー"], ["ウ", "ウィギンズ"], ["グ", "グレゴリー"]]) {
+      if (blank(cells[k]) && blank(marks[k])) continue;
+      boxes.push([k, k === "ハ/ホプ" && /^(ハンター|ホプキンス)$/.test(cells[k] || "") ? cells[k] : label]);
+      break;
     }
-    html += `<div class="mark-box"><strong>ベイカー/ハンター/ホプキンス/ウィギンズ</strong>${escapeHtml(specialistCell)}<br/><span>${escapeHtml(specialistMark)}</span></div>`;
+    for (const [k, label] of boxes) {
+      if (blank(cells[k]) && blank(marks[k])) continue;
+      const cell = blank(cells[k]) || cells[k] === label ? "" : `${escapeHtml(cells[k])}<br/>`;
+      html += `<div class="mark-box"><strong>${escapeHtml(label)}</strong>${cell}<span>${escapeHtml(marks[k] || "-")}</span></div>`;
+    }
     html += "</div><div class='pdf-links'>";
     if (r.pdf_url) html += `<a href="${escapeAttr(r.pdf_url)}" target="_blank" rel="noopener">予想詳細PDF</a>`;
     if (r.help_pdf_url) html += `<a href="${escapeAttr(r.help_pdf_url)}" target="_blank" rel="noopener">項目説明PDF</a>`;
@@ -1107,15 +1164,14 @@
     const m = s.match(
       /^(\d{4}-\d{2}-\d{2})(?:[T\s]+)(\d{2}:\d{2}(?::\d{2})?)?/
     );
-    // 【最終更新日時】であることが一目で分かるよう見出し付きで表示
-    const lines = ["【最終更新日時】"];
+    // 開催日を先に出し、更新日時は開催日と同じ日なら時刻だけ（分まで）。日付の二重表示をやめた（2026-10-26）
+    const lines = [`開催日 ${scheduleDate || "-"}`];
     if (m) {
-      lines.push(`📅${m[1]}`);
-      if (m[2]) lines.push(`⏰${m[2]}`);
+      const hm = m[2] ? m[2].slice(0, 5) : "";
+      lines.push(m[1] === String(scheduleDate || "") && hm ? `⏰最終更新 ${hm}` : `⏰最終更新 ${m[1]}${hm ? ` ${hm}` : ""}`);
     } else {
-      lines.push(s);
+      lines.push(`最終更新 ${s}`);
     }
-    lines.push(`開催日 ${scheduleDate || "-"}`);
     return lines.join("\n");
   }
 
@@ -1235,300 +1291,22 @@
       `<a class="btn mark-weekly-pdf-btn" href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer">成績をPDFで見る</a>`;
   }
 
-  const TRACK_BABA_CLASS = { "良": "ryo", "稍重": "yaya", "重": "omo", "不良": "furyo" };
-
-  // JRA 公式の天候は 6 種（晴・曇・小雨・雨・小雪・雪）。
-  // BMP の記号には異体字セレクタ FE0F を付け、字形フォントではなく絵文字で出させる。
-  const TRACK_WEATHER_ICON = {
-    "晴": String.fromCodePoint(0x2600, 0xfe0f),
-    "曇": String.fromCodePoint(0x2601, 0xfe0f),
-    "小雨": String.fromCodePoint(0x1f302),
-    "雨": String.fromCodePoint(0x2602, 0xfe0f),
-    "小雪": String.fromCodePoint(0x1f328, 0xfe0f),
-    "雪": String.fromCodePoint(0x26c4),
-  };
-
-  let trackEmojiOk = null;
-
-  /** 使う絵文字が全て字形を持つ環境か。1 つでも豆腐になるなら文字表示に戻す。 */
-  function trackEmojiSupported() {
-    if (trackEmojiOk !== null) return trackEmojiOk;
-    trackEmojiOk = false;
-    try {
-      const canvas = document.createElement("canvas");
-      if (!canvas.getContext) return trackEmojiOk;
-      canvas.width = 24;
-      canvas.height = 24;
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) return trackEmojiOk;
-      const draw = (ch) => {
-        ctx.clearRect(0, 0, 24, 24);
-        ctx.textBaseline = "top";
-        ctx.font = "18px sans-serif";
-        ctx.fillText(ch, 0, 0);
-        return canvas.toDataURL();
-      };
-      // U+FFFF は非文字なので必ず豆腐になる。これと同じ描画＝その字形が無い。
-      const tofu = draw(String.fromCodePoint(0xffff));
-      trackEmojiOk = Object.keys(TRACK_WEATHER_ICON)
-        .map((k) => TRACK_WEATHER_ICON[k])
-        .every((ch) => draw(ch) !== tofu);
-    } catch (e) {
-      trackEmojiOk = false;
-    }
-    return trackEmojiOk;
-  }
-
-  function trackWeatherHtml(weather) {
-    const text = String(weather || "").trim();
-    const icon = TRACK_WEATHER_ICON[text];
-    // 未知の表記と、絵文字を出せない環境では従来どおり文字で出す。
-    if (!icon || !trackEmojiSupported()) {
-      return '<span class="track-cond-weather">' + escapeHtml(text || "—") + "</span>";
-    }
-    return (
-      '<span class="track-cond-weather track-cond-weather--icon" title="' +
-      escapeHtml(text) +
-      '" aria-label="' +
-      escapeHtml(text) +
-      '">' +
-      icon +
-      "</span>"
-    );
-  }
-
-  function trackBabaClass(v) {
-    return "track-cond-baba track-cond-baba--" + (TRACK_BABA_CLASS[String(v || "").trim()] || "none");
-  }
-
-  // 直前予想は個別レースだけを更新するので、predicted_at が新しいレースほど
-  // 天候・馬場の取得時刻も新しい。predicted_at が無いものは R の大きい方で代用する。
-  function trackCondRecencyKey(r) {
-    const pa = r && r.predicted_at;
-    if (pa) {
-      const t = Date.parse(String(pa).replace(" ", "T"));
-      if (!Number.isNaN(t)) return [1, t];
-    }
-    const rn = parseInt(String((r && r.R) || "").replace(/[^0-9]/g, ""), 10);
-    return [0, Number.isNaN(rn) ? -1 : rn];
-  }
-
-  function trackLatestValue(races, valueOf) {
-    let best = "";
-    let bestKey = null;
-    for (const r of races) {
-      const v = String(valueOf(r) || "").trim();
-      if (!v || v === "-") continue;
-      const key = trackCondRecencyKey(r);
-      if (!bestKey || key[0] > bestKey[0] || (key[0] === bestKey[0] && key[1] > bestKey[1])) {
-        best = v;
-        bestKey = key;
-      }
-    }
-    return best;
-  }
-
-  /* 最後の直線の風（2026-10-17）。気象庁アメダスの最寄り観測点を閲覧者のブラウザから直接読む
-     （CORS 許可あり・1観測点 約8KB）。表示だけで予想には使わない。
-     bearing は直線をゴールへ向かう進行方向（北=0°・時計回り）。OSM の走路と実測コース形状の
-     照合で求め、180°取り違えはスタンド側の建物面積で検算した（サーバー ~/research_wind/）。 */
-  const WIND_STRETCH = {
-    札幌: { bearing: 179.4, hand: "right", station: "14163", stationName: "札幌", km: 1.8 },
-    函館: { bearing: 123.5, hand: "right", station: "23232", stationName: "函館", km: 4.3 },
-    福島: { bearing: 26.5, hand: "right", station: "36127", stationName: "福島", km: 1.3 },
-    新潟: { bearing: 241.8, hand: "left", station: "54236", stationName: "松浜", km: 6.5 },
-    東京: { bearing: 267.5, hand: "left", station: "44116", stationName: "府中", km: 2.1 },
-    中山: { bearing: 14.8, hand: "right", station: "45106", stationName: "船橋", km: 7.6 },
-    中京: { bearing: 234.1, hand: "left", station: "51216", stationName: "大府", km: 9.0 },
-    京都: { bearing: 53.5, hand: "right", station: "61326", stationName: "京田辺", km: 9.1 },
-    阪神: { bearing: 286.8, hand: "right", station: "62051", stationName: "豊中", km: 7.1 },
-    小倉: { bearing: 156.5, hand: "right", station: "82056", stationName: "八幡", km: 12.1 },
-  };
-  const WIND_DIR16 = ["", "北北東", "北東", "東北東", "東", "東南東", "南東", "南南東", "南", "南南西", "南西", "西南西", "西", "西北西", "北西", "北北西", "北"];
-  const WIND_REFRESH_MS = 10 * 60 * 1000;
-  const windState = { byPlace: {}, loadedAt: 0, loading: false, frozenDay: "" };
-  /** 最終レースの発走からこの分だけ後の観測で風を止める（その10分観測にレースが入る） */
-  const WIND_FREEZE_AFTER_LAST_START_MIN = 10;
-
-  /** 当日最終レース発走＋10分を "YYYYMMDDHHMM00"（アメダスのキーと同じ形）で。発走時刻が無ければ "" */
-  function windFreezeKey(data) {
-    let last = -1;
-    for (const v of Array.isArray(data.venues) ? data.venues : []) {
-      for (const r of Array.isArray(v && v.races) ? v.races : []) {
-        const hm = normalizeStartTime(r && r.start_time);
-        if (hm) last = Math.max(last, Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5)));
-      }
-    }
-    if (last < 0) return "";
-    const t = Math.min(last + WIND_FREEZE_AFTER_LAST_START_MIN, 23 * 60 + 50);
-    const ymd = String(data.schedule_date || "").replace(/-/g, "");
-    return `${ymd}${String(Math.floor(t / 60)).padStart(2, "0")}${String(t % 60).padStart(2, "0")}00`;
-  }
-
-  /** 風向（吹いてくる方位 1〜16）と直線の向きから、追い風／向かい風／横風を判定する。
-      rel は「風が吹いていく向き」を、馬が上へ走り内ラチが左にある図に置いたときの角度
-      （0=真上=追い風、180=向かい風、-90=外から内へ吹く横風、+90=内から外へ）。
-      右回りは内ラチが右手なので左右を反転して、どの場でも内ラチを左に描く */
-  function windRelation(dirCode, speed, info) {
-    if (!dirCode || !(speed > 0)) return { label: "無風", cls: "calm", rel: 0 };
-    const toward = (dirCode * 22.5 + 180) % 360;
-    let rel = ((toward - info.bearing + 540) % 360) - 180;
-    if (info.hand === "right") rel = -rel;
-    const diff = Math.abs(rel);
-    if (diff <= 45) return { label: "追い風", cls: "tail", rel };
-    if (diff >= 135) return { label: "向かい風", cls: "head", rel };
-    return { label: rel < 0 ? "スタンド側からの横風" : "内馬場側からの横風", cls: "cross", rel };
-  }
-
-  function jstTodayYmd() {
-    const d = new Date(Date.now() + 9 * 3600 * 1000);
-    return d.toISOString().slice(0, 10);
-  }
-
-  /** 当日開催の表示中だけ取りに行く（過去日の表示に「現在の風」を出さない） */
-  function windApplies(data) {
-    return !!data && !isDayClosedSnapshot(data) && String(data.schedule_date || "") === jstTodayYmd();
-  }
-
-  async function loadWind(data, { force = false } = {}) {
-    if (!windApplies(data)) {
-      windState.byPlace = {};
-      return;
-    }
-    if (windState.loading) return;
-    // 最終レースが終わった後は、そのレース時点の風で止めて取りに行かない
-    if (windState.frozenDay === String(data.schedule_date || "") && Object.keys(windState.byPlace).length) return;
-    if (!force && Date.now() - windState.loadedAt < WIND_REFRESH_MS) return;
-    const places = (Array.isArray(data.venues) ? data.venues : [])
-      .map((v) => String((v && v.place) || "").trim())
-      .filter((p) => WIND_STRETCH[p]);
-    if (!places.length) return;
-    windState.loading = true;
-    try {
-      const base = "https://www.jma.go.jp/bosai/amedas/data";
-      const latest = String(await (await fetch(`${base}/latest_time.txt`, { cache: "no-store" })).text()).trim();
-      const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(latest);
-      if (!m) return;
-      const latestKey = `${m[1]}${m[2]}${m[3]}${m[4]}${m[5]}00`;
-      const freezeKey = windFreezeKey(data);
-      const frozen = !!freezeKey && latestKey >= freezeKey;
-      // 止めるときは最終レース時点を含む3時間ブロックを読む（最新のブロックだと後の観測しか無い）
-      const k = frozen ? freezeKey : latestKey;
-      const block = `${k.slice(0, 8)}_${String(Math.floor(Number(k.slice(8, 10)) / 3) * 3).padStart(2, "0")}`;
-      const next = {};
-      await Promise.all(
-        places.map(async (place) => {
-          const info = WIND_STRETCH[place];
-          try {
-            const res = await fetch(`${base}/point/${info.station}/${block}.json`, { cache: "no-store" });
-            if (!res.ok) return;
-            const series = await res.json();
-            const keys = Object.keys(series || {}).sort();
-            for (let i = keys.length - 1; i >= 0; i--) {
-              if (frozen && keys[i] > freezeKey) continue;
-              const row = series[keys[i]] || {};
-              const dir = Array.isArray(row.windDirection) ? row.windDirection[0] : null;
-              const spd = Array.isArray(row.wind) ? row.wind[0] : null;
-              if (typeof spd !== "number" || typeof dir !== "number") continue;
-              next[place] = { dir, speed: spd, at: `${keys[i].slice(8, 10)}:${keys[i].slice(10, 12)}` };
-              break;
-            }
-          } catch (e) {
-            /* 1場の失敗で他の場を落とさない */
-          }
-        })
-      );
-      windState.byPlace = next;
-      windState.loadedAt = Date.now();
-      windState.frozenDay = frozen && Object.keys(next).length ? String(data.schedule_date || "") : "";
-    } catch (e) {
-      /* 気象庁に届かないときは風の行を出さないだけ */
-    } finally {
-      windState.loading = false;
-    }
-    if (state.data === data) renderTrackConditions(data);
-  }
-
-  /** 小さな図: テレビ中継と同じくスタンド側から見た向き。上の横線が内ラチ（奥）、
-      馬は右回りなら右→左、左回りなら左→右へ走る。矢印は風が吹いていく向き。
-      rel（馬が上へ走り内ラチが左の図での角度）を、右回りは鏡映して -90-rel、左回りは 90+rel に移す */
-  function trackWindHtml(place) {
-    const info = WIND_STRETCH[place];
-    const w = windState.byPlace[place];
-    if (!info || !w) return "";
-    const rel = windRelation(w.dir, w.speed, info);
-    // 風速は常に小数1桁（4 → 4.0）
-    const speedText = Number(w.speed).toFixed(1);
-    const dirName = WIND_DIR16[w.dir] || "静穏";
-    // 例: 「向かい風 3.5m/s（府中 北西 11:40）」
-    const title =
-      `${rel.label}${rel.cls === "calm" ? "" : ` ${speedText}m/s`}（${info.stationName} ${dirName} ${w.at}）`;
-    const screenDeg = info.hand === "right" ? -90 - rel.rel : 90 + rel.rel;
-    const arrow =
-      rel.cls === "calm"
-        ? '<circle cx="8" cy="9.5" r="1.6" fill="currentColor"/>'
-        : `<g transform="rotate(${screenDeg.toFixed(0)} 8 9.5)"><path d="M8 14.5V4.5M4.8 7.6 8 4.4l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></g>`;
-    return (
-      `<span class="track-cond-wind track-cond-wind--${rel.cls}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">` +
-      `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 1.5h14" stroke="currentColor" stroke-width="1.2" opacity="0.45"/>${arrow}</svg>` +
-      `<span class="track-cond-wind-speed">${rel.cls === "calm" ? "0.0" : escapeHtml(speedText)}</span></span>`
-    );
-  }
+  // 【天候・馬場・直線風向 m/s】の部品は track_cond.js（追跡ページと共用、2026-10-25 切り出し）
+  const TrackCond = window.TrackCond;
+  const WIND_REFRESH_MS = TrackCond.WIND_REFRESH_MS;
+  const jstTodayYmd = TrackCond.jstTodayYmd;
 
   function renderTrackConditions(data) {
-    const box = $("trackCond");
-    const list = $("trackCondList");
-    if (!box || !list) return;
-    const vs = (data && Array.isArray(data.venues) ? data.venues : []).filter(
-      (v) => v && Array.isArray(v.races) && v.races.length
-    );
-    if (isDayClosedSnapshot(data) || !vs.length) {
-      box.hidden = true;
-      list.innerHTML = "";
-      return;
-    }
-    const items = [];
-    for (const v of vs) {
-      const races = v.races.filter((r) => r && typeof r === "object");
-      const place = String(v.place || (races[0] && races[0].place) || "").trim();
-      if (!place) continue;
-      const weather = trackLatestValue(races, (r) => r.weather);
-      // 障害は芝・ダートのどちらの馬場を指すか一意でないので、面別集計からは外す
-      const onSurface = (name) => races.filter((r) => String(r.course || "").trim() === name);
-      const cells = [
-        ["芝", trackLatestValue(onSurface("芝"), (r) => r.baba)],
-        ["ダ", trackLatestValue(onSurface("ダート"), (r) => r.baba)],
-      ]
-        .map(
-          ([label, baba]) =>
-            '<span class="track-cond-surface"><span class="track-cond-surface-label">' +
-            escapeHtml(label) +
-            '</span><span class="' +
-            trackBabaClass(baba) +
-            '">' +
-            escapeHtml(baba || "—") +
-            "</span></span>"
-        )
-        .join("");
-      items.push(
-        '<li class="track-cond-item"><span class="track-cond-place">' +
-          escapeHtml(place) +
-          "</span>" +
-          trackWeatherHtml(weather) +
-          cells +
-          trackWindHtml(place) +
-          "</li>"
-      );
-    }
-    list.innerHTML = items.join("");
-    box.hidden = !items.length;
-    // 風の観測時刻は場ごとでなく見出しに1回だけ（全場が同じアメダスの時刻）
-    const windAt = $("trackCondWindAt");
-    if (windAt) {
-      const at = Object.values(windState.byPlace).map((w) => w.at).sort().pop() || "";
-      windAt.textContent = at ? `風${at}` : "";
-      windAt.hidden = !at;
-    }
+    TrackCond.render(data);
+  }
+
+  function loadWind(data, opts = {}) {
+    return TrackCond.loadWind(data, {
+      ...opts,
+      onLoaded: (d) => {
+        if (state.data === d) TrackCond.render(d);
+      },
+    });
   }
 
   function applyData(data, { flash = false } = {}) {
@@ -1558,6 +1336,7 @@
     renderMatrix();
     renderJumps();
     syncBrandJump();
+    renderNextRaceBox();
     if (state.raceId) {
       renderDetail();
       renderShutuba();
@@ -1584,6 +1363,90 @@
         $("updatedAt").innerHTML = `<span class="error">スナップショット取得失敗: ${escapeHtml(e.message || e)}</span>`;
       }
     }
+  }
+
+  /* ===== ホームズ指数速報（締切が最も近いレース。PC表示の左の欄、追跡ボタンの真上） =====
+     2026-10-26 ユーザーの手書き図。発売締切（発走2分前）がまだ来ていない非障害レースのうち一番近いもの。
+     締切を過ぎたら次のレースへ。残りは秒数で、手元の時計で1秒ごとに進める。押すとそのレースの予想へ。
+     締切 NEXT_RACE_FILL_SEC 秒前から残り時間の欄を左から1秒ずつ警戒色の赤で塗る（手書き図は120秒、10-26 ユーザー指示で90秒）。
+     試験版の正方形の mini.html はこれに一本化して削除した（計算はここだけ）。 */
+  const SALES_CLOSE_BEFORE_MS = 2 * 60 * 1000;
+  const NEXT_RACE_FILL_SEC = 90;
+  function nextCloseRace(now) {
+    const day = state.data && state.data.schedule_date;
+    let best = null;
+    let bestT = Infinity;
+    for (const r of allRaces()) {
+      if (isObstacleRace(r)) continue;
+      const st = raceStartDate(r, day);
+      if (!st) continue;
+      const close = st.getTime() - SALES_CLOSE_BEFORE_MS;
+      if (close > now && close < bestT) {
+        bestT = close;
+        best = r;
+      }
+    }
+    return best && { r: best, close: bestT };
+  }
+
+  let nextRaceHtml = "";
+  function renderNextRaceBox() {
+    const el = $("nextRace");
+    const wrap = $("nextRaceWrap");
+    if (!el || !wrap) return;
+    const data = state.data;
+    const p = data && !isDayClosedSnapshot(data) ? nextCloseRace(Date.now()) : null;
+    if (!p) {
+      wrap.hidden = true;
+      el.removeAttribute("data-rid");
+      nextRaceHtml = "";
+      return;
+    }
+    const r = p.r;
+    const v = holmesIndexValue(r);
+    const pending = !r.predicted || v == null;
+    const rank = Number(r.holmes_index_rank);
+    const m = String(r.holmes_rank_text || "").match(/(\d+)\s*レース中/);
+    const total = m ? Number(m[1]) : allRaces().filter((x) => !isObstacleRace(x)).length;
+    const dv = Number(r.holmes_morning_delta);
+    const hasDelta = !pending && r.holmes_morning_delta != null && r.holmes_morning_delta !== "" && Number.isFinite(dv);
+    const delta = hasDelta ? `(${dv > 0 ? `+${dv}` : dv < 0 ? dv : "±0"})` : "";
+    const sec = Math.max(0, Math.floor((p.close - Date.now()) / 1000));
+    const rn = String(r.R || "").replace(/[Rr]$/, "");
+    let cls = "next-race";
+    if (!pending && isHolmesLow(r)) cls += " is-low";
+    else if (!pending && rank === 1) cls += " rank-top";
+    else if (!pending && rank >= 2 && rank <= 5) cls += " rank-hi";
+    else if (!pending && rank >= 6 && rank <= 10) cls += " rank-mid";
+    const html =
+      `<span class="nr-main"><span><span class="nr-idx">${pending ? "-" : escapeHtml(v)}</span>` +
+      `<span class="nr-delta">${escapeHtml(delta)}</span></span>` +
+      `<span class="nr-rank">${pending || !rank ? "-" : rank}<small> / ${total}</small></span></span>` +
+      `<span class="nr-place">${escapeHtml(r.place || "")}</span>` +
+      `<span class="nr-race">${escapeHtml(rn)}</span>` +
+      `<span class="nr-secs${sec < 60 ? " soon" : ""}"><small>締切まで</small>${sec}</span>`;
+    el.className = cls;
+    wrap.hidden = false;
+    const fill = Math.min(1, Math.max(0, (NEXT_RACE_FILL_SEC - sec) / NEXT_RACE_FILL_SEC));
+    el.style.setProperty("--nr-fill", `${(fill * 100).toFixed(2)}%`);
+    el.dataset.rid = r.race_id;
+    el.dataset.place = r.place || "";
+    const label = `${r.place || ""}${rn}R ${r.name || ""} 発走${normalizeStartTime(r.start_time)}（締切まで${sec}秒）の予想へ`;
+    el.title = label;
+    el.setAttribute("aria-label", label);
+    if (html !== nextRaceHtml) {
+      el.innerHTML = html;
+      nextRaceHtml = html;
+    }
+  }
+
+  function initNextRaceBox() {
+    const el = $("nextRace");
+    if (!el) return;
+    el.addEventListener("click", () => {
+      if (el.dataset.rid) selectRace(el.dataset.rid, el.dataset.place);
+    });
+    window.setInterval(renderNextRaceBox, 1000);
   }
 
   /* ===== サイトバナー → 発走が最も近いレース ================================
@@ -1979,13 +1842,17 @@
   function renderResult() {
     const box = $("raceResult");
     if (!box) return;
+    // 確定するまでは見出しごと隠す（開いても「まだ確定していません」だけだったため。2026-10-26）
+    const card = $("raceResultCard");
     const found = findRace(state.raceId);
     if (!found) {
+      if (card) card.hidden = true;
       box.innerHTML = "<p class='hint'>レースを選ぶと、確定したレースの結果が表示されます。</p>";
       return;
     }
     const r = found.race;
     const html = raceResultHtml(r);
+    if (card) card.hidden = !html;
     box.innerHTML =
       html ||
       `<p class="hint">${escapeHtml(r.place || "")} ${escapeHtml(String(r.R || ""))}R の結果はまだ確定していません（確定から20分ほどで表示されます）。</p>`;
@@ -2474,6 +2341,7 @@
   initJumpLayoutControls();
   initPrevPdfBlock();
   initBrandJump();
+  initNextRaceBox();
   loadSnapshot();
   const poll = Number(cfg.POLL_INTERVAL_MS) || 30000;
   if (poll > 0) {
@@ -2482,5 +2350,16 @@
   }
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) loadSnapshot({ silent: true });
+  });
+  // 追跡ページは別ウインドウで開く（2026-10-24 ユーザー指示。target だけだと多くのブラウザで別タブになる）。
+  // 同じ名前の窓が開いていればそこに読み直して前に出す。ポップアップが止められた・スマホ等では従来どおり別タブ
+  document.addEventListener("click", (e) => {
+    const a = e.target && e.target.closest ? e.target.closest("a.tracker-btn") : null;
+    if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+    const w = window.open(a.href, "holmesTracker", "popup=yes,width=1180,height=900");
+    if (w) {
+      e.preventDefault();
+      try { w.focus(); } catch (err) { /* noop */ }
+    }
   });
 })();

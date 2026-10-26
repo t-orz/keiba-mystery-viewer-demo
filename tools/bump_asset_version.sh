@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 閲覧サイトの app.js / styles.css / config.js を読み込む URL に ?v=<時刻> を付け直す（2026-10-12）。
+# 閲覧サイトの app.js / styles.css / config.js / track_cond.js を読み込む URL に ?v=<時刻> を付け直す（2026-10-12）。
 #
 # GitHub Pages はファイルを10分キャッシュさせる（Cache-Control: max-age=600）ので、
 # 更新直後は「新しい index.html ＋ 古い app.js」の組み合わせで表示が崩れることがある
@@ -12,10 +12,10 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-HTMLS=(index.html help.html admin/index.html)
+HTMLS=(index.html help.html tracker.html admin/index.html)
 
 if [[ "${1:-}" == "--staged" ]]; then
-  git diff --cached --name-only | grep -qxE "app\.js|styles\.css|config\.js" || exit 0
+  git diff --cached --name-only | grep -qxE "app\.js|styles\.css|config\.js|track_cond\.js" || exit 0
 fi
 
 V="$(date +%Y%m%d%H%M%S)"
@@ -27,7 +27,7 @@ for f in "${HTMLS[@]}"; do
   fi
   sed -i -E \
     -e "s#(href=\"(\.\./)?styles\.css)(\?v=[0-9]+)?\"#\1?v=${V}\"#g" \
-    -e "s#(src=\"(\.\./)?(app|config)\.js)(\?v=[0-9]+)?\"#\1?v=${V}\"#g" \
+    -e "s#(src=\"(\.\./)?(app|config|track_cond)\.js)(\?v=[0-9]+)?\"#\1?v=${V}\"#g" \
     "$f"
   [[ "${1:-}" == "--staged" ]] && git add -- "$f"
 done
